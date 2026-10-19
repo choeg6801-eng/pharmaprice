@@ -545,7 +545,7 @@ function dsInfo(){
   return {kind:'sample',label:T('예시 데이터','Sample data'),detail:T(S.sample.detail,S.sample.detailEn)};
 }
 const dsWord=()=>dsInfo().label;
-function liveKey(){return [S.reporter,S.hs,S.freq,S.n].join('|')}
+function liveKey(){return [S.reporter,S.hs,S.freq,S.n,S.mot||'0'].join('|')}
 function periodList(freq,n){
   const now=new Date();const out=[];
   if(freq==='A'){const y=now.getFullYear()-1;for(let i=n-1;i>=0;i--)out.push(String(y-i));return out}
@@ -568,19 +568,20 @@ function normRow(d,flowHint){
   const per=String(d.period||d.refPeriodId||'');const period=/^\d{6}$/.test(per)?per.slice(0,4)+'-'+per.slice(4,6):per.slice(0,4);
   return {hs:S.hs,flow,p:key,nm:pd||key,period,v,kg,q:isNum(q)&&q>0&&qu&&qu!=='kg'&&qu!=='n/a'?q:null,qu:qu&&qu!=='n/a'?qu:null,b,est:!!(d.nwe||d.isNetWgtEstimated),qe:!!(d.qe||d.isQtyEstimated)};
 }
-async function apiFetch(period,st){
-  const r=String(S.reporter),cmd=S.hs.slice(0,6),f=S.freq;
-  const url=S.api==='proxy'?`api/comtrade?r=${r}&cmd=${cmd}&p=${period}&f=${f}`:`https://comtradeapi.un.org/public/v1/preview/C/${f}/HS?reporterCode=${r}&period=${period}&cmdCode=${cmd}&flowCode=M,X&partner2Code=0&motCode=0&customsCode=C00&includeDesc=true`;
+async function apiFetch(period,st,op={}){
+  const r=String(op.r||S.reporter),cmd=S.hs.slice(0,6),f=S.freq,fl=op.fl||'M,X',mot=op.mot!=null?op.mot:(S.mot||'0'),pc=op.pc!=null?String(op.pc):'';
+  const url=S.api==='proxy'?`api/comtrade?r=${r}&cmd=${cmd}&p=${period}&f=${f}&fl=${encodeURIComponent(fl)}&mot=${mot}${pc?`&pc=${pc}`:''}`:`https://comtradeapi.un.org/public/v1/preview/C/${f}/HS?reporterCode=${r}&period=${period}&cmdCode=${cmd}&flowCode=${fl}&partner2Code=0&motCode=${mot}&customsCode=C00&includeDesc=true${pc?`&partnerCode=${pc}`:''}`;
   const tries=S.api==='proxy'?1:3;
   for(let i=0;i<tries;i++){
     const res=await fetchT(url,{},S.api==='proxy'?60000:25000);
     if(res.status===429){const ra=+res.headers.get('retry-after')||0;if(i<tries-1){await sleep(Math.max(ra*1000,1500*(i+1)));continue}throw new Error('rate')}
     if(!res.ok)throw new Error('http '+res.status);
-    const j=await res.json();const d=j.data||[];if(st&&(j.truncated||(+j.count||0)>=500||d.length>=500))st.trunc=true;return d;
+    const j=await res.json();const d=j.data||[];if(st&&j.truncated)st.trunc=true;if(st&&S.api!=='proxy'&&d.length>=500)st.trunc=true;return d;
   }
   throw new Error('rate');
 }
 let liveRun=0;
+const chunk=(a,n)=>{const o=[];for(let i=0;i<a.length;i+=n)o.push(a.slice(i,i+n));return o};
 async function fetchT(url,opt={},ms=20000){const ctl=new AbortController(),tm=setTimeout(()=>ctl.abort(),ms);try{return await fetch(url,Object.assign({},opt,{signal:ctl.signal}))}finally{clearTimeout(tm)}}
 async function loadLive(force){
   if(!S.api||!REF.ok)return;
@@ -590,12 +591,12 @@ async function loadLive(force){
   if(cached&&cached.at&&Date.now()-cached.at<24*3600e3&&Array.isArray(cached.recs)){++liveRun;S.live=cached;S.liveCache[key]=cached;S.cache={};render();return}
   const run=++liveRun;const nn=S.freq==='A'?Math.min(S.n,5):S.n;
   S.live={key,status:'loading',done:0,total:nn,recs:[],periods:[],freq:S.freq,err:0};S.cache={};render();
-  const av=await availPeriods(S.reporter,S.freq);if(run!==liveRun)return;
+  const av=await availPeriods(S.reporter,S.freq);if(run!==liveRun)return;if(S.mot&&S.mot!=='0'&&!motAvail()){S.mot='0';return loadLive(force)}
   if(av&&!av.length&&S.freq==='M'){toast(T('이 나라는 월간 자료를 내지 않아 연간 자료로 찾습니다','This reporter has no monthly data. Using annual data.'));S.freq='A';S.n=5;return loadLive()}
   const periods=av&&av.length?av.slice(-nn):periodList(S.freq,nn);
   S.live={key,status:'loading',done:0,total:periods.length,recs:[],periods:[],freq:S.freq,err:0};S.cache={};render();
-  const queue=periods.slice();const got={};
-  const st={err:0,trunc:false};let nth=0;const worker=async()=>{while(queue.length){const p=queue.shift();if(nth++>1)await sleep(350);try{const rows=await apiFetch(p,st);if(run!==liveRun)return;got[p]=rows.map(normRow).filter(Boolean)}catch(e){if(run!==liveRun)return;got[p]=null;st.err++;S.live.err=st.err}
+  const batch=S.api==='proxy'&&S.apiKey;const queue=batch?chunk(periods,12).map(g=>g.join(',')):periods.slice();const got={};if(batch)S.live.total=queue.length;
+  const st={err:0,trunc:false};let nth=0;const worker=async()=>{while(queue.length){const p=queue.shift();if(nth++>1)await sleep(350);try{const rows=await apiFetch(p,st);if(run!==liveRun)return;if(batch){p.split(',').forEach(x=>got[x]=[]);rows.forEach(d=>{const k=String(d.period);const n=normRow(d);if(n&&got[k])got[k].push(n)})}else got[p]=rows.map(normRow).filter(Boolean)}catch(e){if(batch&&run===liveRun){p.split(',').forEach(x=>got[x]=null);st.err+=p.split(',').length-1}if(run!==liveRun)return;got[p]=null;st.err++;S.live.err=st.err}
     if(run!==liveRun)return;S.live.done++;const bar=$('#live-prog');if(bar){bar.style.width=(S.live.done/S.live.total*100)+'%';const t=$('#live-prog-t');if(t)t.textContent=`${S.live.done} / ${S.live.total}`}}};
   await Promise.all([worker(),worker()]);
   if(run!==liveRun)return;
@@ -611,20 +612,47 @@ async function loadLive(force){
 function lcSave(key,L){const idx=store.get('lcidx',[]).filter(k=>k!==key);idx.push(key);while(idx.length>6){store.del('lc:'+idx.shift())}
   if(!store.set('lc:'+key,L)){idx.slice(0,-1).forEach(k=>store.del('lc:'+k));store.set('lcidx',[key]);store.set('lc:'+key,L);return}store.set('lcidx',idx)}
 async function availPeriods(r,f){const k=r+'|'+f;S.daCache=S.daCache||{};
-  const c=S.daCache[k]||store.get('da:'+k,null);if(c&&Date.now()-c.at<12*3600e3)return c.periods;
+  const c=S.daCache[k]||store.get('da:'+k,null);if(c&&Date.now()-c.at<12*3600e3&&Array.isArray(c.periods)){S.daCache[k]=c;return c.periods}
   try{let j=null;
     if(S.api==='proxy'){const res=await fetchT(`api/comtrade?da=1&r=${r}&f=${f}`,{},20000);if(res.ok)j=await res.json()}
     else if(S.api==='direct'){const res=await fetchT(`https://comtradeapi.un.org/public/v1/getDa/C/${f}/HS?reportercode=${r}`,{},15000);if(res.ok){const x=await res.json();j={periods:Array.from(new Set((x.data||[]).map(d=>String(d.period)))).sort()}}}
     if(!j||!Array.isArray(j.periods))return null;
     const now=new Date(),cap=f==='A'?String(now.getFullYear()):String(now.getFullYear())+String(now.getMonth()+1).padStart(2,'0');
     const periods=j.periods.filter(p=>(f==='A'?/^\d{4}$/:/^\d{6}$/).test(p)&&p<=cap);
-    const v={periods,at:Date.now()};S.daCache[k]=v;store.set('da:'+k,v);return periods}catch(e){return null}}
+    const v={periods,motExt:j.motExt||{},at:Date.now()};S.daCache[k]=v;store.set('da:'+k,v);return periods}catch(e){return null}}
+/* mirror check: the partner's own report of the same trade (partner exports to us = our imports from them) */
+function mirrorKey(c,pk){return [S.reporter,pk,S.hs,S.freq,c.flow,c.periods.join(',')].join('|')}
+async function loadMirror(pk){const c=ctx();const pi=REF.byA3[pk];const key=mirrorKey(c,pk);S.mirror=S.mirror||{};
+  if(!pi||!S.api){S.mirror[key]={status:'na'};return refreshMirror()}
+  S.mirror[key]={status:'loading'};refreshMirror();
+  const opp=c.flow==='M'?'X':'M',ra=repInfo(),pers=c.periods.map(p=>p.replace('-',''));
+  const st={err:0,trunc:false};let v=0,kg=0,found=new Set();
+  const take=rows=>rows.forEach(d=>{const pi2=d.pi||d.partnerISO,pc2=+(d.pc!=null?d.pc:d.partnerCode);if(!(pi2===ra.a3||pc2===+S.reporter))return;if((d.flow||d.flowCode)!==opp)return;
+    const nw=d.nw!=null?d.nw:d.netWgt,q=d.q!=null?d.q:d.qty,qu=String(d.qu||d.qtyUnitAbbr||'').toLowerCase();const w=nw>0?nw:(qu==='kg'&&q>0?q:0);
+    const cif=d.cif!=null?d.cif:d.cifvalue,fob=d.fob!=null?d.fob:d.fobvalue,pv=d.pv!=null?d.pv:d.primaryValue;const val=opp==='M'?(cif>0?cif:fob>0?fob:pv):(fob>0?fob:pv);
+    if(w>0&&val>0){v+=val;kg+=w;found.add(String(d.period))}});
+  try{const batch=S.api==='proxy'&&S.apiKey;const groups=batch?chunk(pers,12).map(g=>g.join(',')):pers.slice();
+    const q=groups.slice();const worker=async()=>{while(q.length){const g=q.shift();try{take(await apiFetch(g,st,{r:pi.c,pc:S.reporter,fl:opp,mot:'0'}))}catch(e){st.err++}}};
+    await Promise.all([worker(),worker()]);
+    S.mirror[key]=kg>0?{status:'ok',u:v/kg,v,kg,n:found.size,err:st.err}:{status:st.err?'error':'empty'}}catch(e){S.mirror[key]={status:'error'}}
+  refreshMirror()}
+function refreshMirror(){const el=$$('[data-mirror-box]');el.forEach(b=>{const c=ctx();const p=c.partners.find(x=>x.key===b.dataset.mirrorBox);if(p)b.outerHTML=mirrorCard(c,p)})}
+function mirrorCard(c,p){if(S.src!=='live'||c.measure!=='kg'||!REF.byA3[p.key])return '';const m=(S.mirror||{})[mirrorKey(c,p.key)];const ours=c.flow==='M'?'CIF':'FOB',theirs=c.flow==='M'?'FOB':'CIF';
+  let body;
+  if(!m)body=`<p class="small" style="color:var(--ink-2)">${T(`같은 거래를 ${esc(p.name)}가 신고한 통계(미러 데이터)와 비교해 이 나라 단가를 믿어도 되는지 확인합니다.`,`Compare with ${esc(p.name)}'s own report of the same trade (mirror data) to see whether this price is reliable.`)}</p><button type="button" class="btn btn-sm" style="margin-top:10px" data-mirror="${esc(p.key)}">${ico('refresh',16)}${T('상대국 신고로 확인','Check against partner data')}</button>`;
+  else if(m.status==='loading')body=`<p class="small">${T('상대국 통계를 불러오는 중…','Loading partner data…')}</p>`;
+  else if(m.status==='ok'){const cifU=c.flow==='M'?p.u:m.u,fobU=c.flow==='M'?m.u:p.u,r=cifU/fobU,kgd=m.kg/p.w-1;const ok=r>=.9&&r<=1.25;
+    body=`<div class="grid2" style="margin-top:4px"><div><div class="hint">${esc(repName())} ${T('신고','report')} (${ours})</div><div class="mono" style="font-size:20px">${fUSD(p.u)}${perU(c)}</div><div class="hint">${fW(p.w,c)}</div></div><div><div class="hint">${esc(p.name)} ${T('신고','report')} (${theirs})</div><div class="mono" style="font-size:20px">${fUSD(m.u)}${perU(c)}</div><div class="hint">${fW(m.kg,c)} · ${m.n}${T('개 기간','periods')}</div></div></div>
+    <div class="note" style="margin-top:12px;${ok?'background:var(--good-bg);color:var(--good)':''}">${ok?T(`CIF가 FOB의 ${r.toFixed(2)}배로, 운임·보험료 차이 범위 안에서 두 통계가 맞습니다. 이 나라 단가는 근거로 쓰기 좋습니다.`,`CIF is ${r.toFixed(2)}× FOB, within the freight and insurance range. The two reports agree, so this price is solid evidence.`):T(`CIF가 FOB의 ${r.toFixed(2)}배로, 운임·보험료로 설명하기 어려운 차이가 있습니다(중량 차이 ${fPct(kgd)}). 신고 시점·품목 분류·이전가격 차이일 수 있으니 이 나라 단가는 신중하게 쓰세요.`,`CIF is ${r.toFixed(2)}× FOB, more than freight and insurance explain (weight differs ${fPct(kgd)}). Timing, classification or transfer pricing may differ, so use this price with care.`)}</div>${m.err?`<p class="hint" style="margin-top:6px">${T('일부 기간은 불러오지 못했습니다.','Some periods failed to load.')}</p>`:''}`}
+  else body=`<p class="small">${m.status==='na'?T('이 나라는 상대국 통계를 조회할 수 없습니다.','Partner data is not available for this country.'):m.status==='empty'?T(`${esc(p.name)}는 같은 기간에 이 품목을 보고하지 않았거나 중량이 없습니다.`,`${esc(p.name)} did not report this product with weights for these periods.`):T('상대국 통계를 불러오지 못했습니다.','Could not load partner data.')}</p>${m.status==='error'?`<button type="button" class="btn btn-sm" style="margin-top:8px" data-mirror="${esc(p.key)}">${T('다시 시도','Retry')}</button>`:''}`;
+  return `<div class="card" data-mirror-box="${esc(p.key)}"><div class="card-head"><h3>${T('상대국 통계로 교차 확인','Mirror check')}</h3><span class="hint">${esc(p.name)}</span></div>${body}</div>`}
+function motAvail(){if(S.src!=='live'||S.api!=='proxy'||!S.apiKey)return false;const c=S.daCache&&S.daCache[S.reporter+'|'+S.freq];if(!c||!c.motExt)return false;const ps=Object.keys(c.motExt).sort().slice(-3);return ps.some(p=>c.motExt[p])}
 function freshNote(c){if(S.src!=='live'||!c.periods.length)return '';const fe=S.live&&S.live.err&&S.live.status==='ok'?`<div class="note" style="margin-bottom:16px">${T(`${S.live.err}개 기간을 불러오지 못해 나머지 기간으로 계산했습니다.`,`${S.live.err} period(s) failed to load, so the rest were used.`)} <button type="button" class="btn btn-sm" data-reload>${T('다시 불러오기','Reload')}</button></div>`:'';const tr=fe+S.live&&S.live.trunc?`<div class="note" style="margin-bottom:16px">${T('일부 기간이 무료 API의 500행 제한에 걸려 상대국 일부가 빠졌을 수 있습니다. Vercel 설정에 무료 COMTRADE_KEY를 넣으면 전체 자료를 받습니다.','Some periods hit the free API limit of 500 rows, so a few partners may be missing. Add a free COMTRADE_KEY in Vercel to get everything.')}</div>`:'';const last=c.periods[c.periods.length-1],now=new Date();
   const lag=c.annual?(now.getFullYear()-(+last))*12:(now.getFullYear()-(+last.slice(0,4)))*12+(now.getMonth()+1-(+last.slice(5,7)));
   if(c.annual?(+last)>=now.getFullYear()-1:lag<=4)return tr;
   return `<div class="note" style="margin-bottom:16px">${T(`UN Comtrade에 반영된 ${esc(repName())}의 최신 자료는 <b>${pl(last)}</b>입니다(각국 보고 후 반영까지 수개월 걸립니다). ${S.reporter===410?'더 최근 단가가 필요하면 관세청 수출입무역통계(tradedata.go.kr)에서 품목·국가별 자료를 CSV로 받아 "데이터 관리"에서 올리세요.':'더 최근 단가가 필요하면 그 나라 세관 통계를 CSV로 받아 "데이터 관리"에서 올리세요.'}`,`The latest ${esc(repName())} data in UN Comtrade is <b>${pl(last)}</b> (publication lags by months). For more recent prices, download customs statistics as CSV and upload them under Data sources.`)}</div>`+tr}
 async function detectApi(){
-  try{const r=await fetchT('api/health',{cache:'no-store'},8000);if(r.ok){const j=await r.json();if(j&&j.ok){S.api='proxy';S.ai=j.ai?'api':S.ai;return}}}catch(e){}
+  try{const r=await fetchT('api/health',{cache:'no-store'},8000);if(r.ok){const j=await r.json();if(j&&j.ok){S.api='proxy';S.apiKey=!!j.comtradeKey;S.ai=j.ai?'api':S.ai;return}}}catch(e){}
   try{const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),6000);
     const r=await fetch('https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=410&period=2023&cmdCode=294190&flowCode=M&includeDesc=true',{signal:ctl.signal});clearTimeout(t);
     if(r.ok){const j=await r.json();if(j&&Array.isArray(j.data))S.api='direct'}}catch(e){}
@@ -1305,6 +1333,7 @@ function appHTML(){
       ${flowLock?`<span class="tag t-neutral">${T('수출 (FOB) 기준','Exports (FOB)')}</span>`:`<div class="seg" role="group" aria-label="${T('거래 방향','Flow')}"><button type="button" data-flow="M" aria-pressed="${S.flow==='M'}">${T('수입','Imports')}</button><button type="button" data-flow="X" aria-pressed="${S.flow==='X'}">${T('수출','Exports')}</button></div>`}
       ${S.src==='live'?`<div class="seg" role="group" aria-label="${T('주기','Frequency')}"><button type="button" data-freq="M" aria-pressed="${S.freq==='M'}">${T('월간','Monthly')}</button><button type="button" data-freq="A" aria-pressed="${S.freq==='A'}">${T('연간','Annual')}</button></div>`:''}
       <label class="sr" for="f-n">${T('기간','Period')}</label><select id="f-n" class="select">${perOpts}</select>
+      ${motAvail()||(S.mot&&S.mot!=='0')?`<label class="sr" for="f-mot">${T('운송 수단','Transport mode')}</label><select id="f-mot" class="select">${[['0',T('운송 전체','All modes')],['1000',T('항공','Air')],['2100',T('해상','Sea')],['3000',T('육상','Land')],['9200',T('우편·특송','Post/courier')]].map(([v,l])=>`<option value="${v}" ${String(S.mot||'0')===v?'selected':''}>${l}</option>`).join('')}</select>`:''}
       ${hasQty?`<div class="seg" role="group" aria-label="${T('단가 기준','Price per')}"><button type="button" data-measure="kg" aria-pressed="${c.measure==='kg'}">${T('kg당','per kg')}</button><button type="button" data-measure="qty" aria-pressed="${c.measure==='qty'}">${esc(quLabel(c.qu))}${T('당','')}</button></div>`:''}`:''}
       <span class="sp"></span>
       <button type="button" class="dsbadge ${di.kind}" data-view="data" title="${T('데이터 관리로 이동','Go to data sources')}"><i></i>${esc(di.label)}${di.detail&&showFilters&&di.kind==='live'?` · ${esc(di.detail)}`:''}</button>
@@ -1340,6 +1369,8 @@ function noData(){
   let msg;
   if(S.src==='sample')msg=T(`예시 데이터에는 HS ${SAMPLE_CODES.join('·')} 네 품목만 들어 있습니다. HS ${S.hs}는 ${S.api?'데이터 관리에서 "UN Comtrade 실시간"을 고르면':'배포 버전(UN Comtrade 실시간)에서 보거나, 관세청·Comtrade CSV를 올리면'} 분석할 수 있습니다.`,`The sample data only covers HS ${SAMPLE_CODES.join(', ')}. To analyse HS ${S.hs}, ${S.api?'switch to live UN Comtrade data':'use the deployed version with live data, or upload a CSV'}.`);
   else if(S.src==='csv')msg=T(`올린 CSV에 HS ${S.hs} 자료(또는 이 거래 방향)가 없습니다.`,`Your CSV has no HS ${S.hs} data for this flow.`);
+  else if(S.live&&S.live.status==='ok'&&srcRecs().some(r=>r.flow===S.flow))msg=T(`${esc(repName())}는 이 품목의 금액은 보고했지만 중량·수량은 보고하지 않아 단가를 계산할 수 없습니다. 다른 보고국을 고르거나, 상대국이 신고한 자료로 보세요(예: 보고국을 상대국으로 바꾸기).`,`${esc(repName())} reported values but no weights or quantities for this product, so unit prices cannot be computed. Pick another reporter, or view the partner's own reports.`);
+  else if(S.mot&&S.mot!=='0')msg=T('이 운송 수단으로 신고된 자료가 없습니다. 운송 전체로 바꿔 보세요.','No data for this transport mode. Switch to all modes.');
   else msg=T('이 조건에 해당하는 자료가 없습니다. 거래 방향, 보고국, 기간을 바꿔 보세요.','No data for this selection. Change flow, reporter or period.');
   return `<div class="card empty">${ico('data',30)}<b>${T('분석할 데이터가 없습니다','No data to analyse')}</b><span class="small" style="max-width:40em">${msg}</span><div class="row" style="justify-content:center">${!inSample&&S.src!=='live'?SAMPLE_CODES.map(cd=>`<button class="btn btn-sm" data-pick="${cd}">HS ${cd} ${esc(prodName(cd))}</button>`).join(''):''}<button class="btn btn-sm btn-primary" data-view="data">${T('데이터 관리','Data sources')}</button></div></div>`;
 }
@@ -1417,7 +1448,7 @@ function vCountries(){
   `<div class="tbl-wrap"><table class="tbl"><thead><tr>${th('name',T('국가','Country'))}${th('u',`${T('평균 단가','Avg price')} (USD${perU(c)})`,1)}<th class="r">${T('중앙값 대비','vs median')}</th>${th('w',T('물동량','Volume'),1)}${th('v',T('금액 (USD)','Value (USD)'),1)}${th('share',T('물량 점유율','Share'),1)}${th('chg',T('최근 단가 변동','Recent change'),1)}<th class="r">${T('바로가기','Action')}</th></tr></thead><tbody>
   ${rows.map(p=>{const df=p.u/c.q.p50-1;return `<tr class="click ${S.selCountry===p.key?'on':''} ${p.small?'dim':''}" data-csel="${esc(p.key)}" tabindex="0"><td><b>${esc(p.name)}</b>${p.small?` <span class="tag t-neutral" title="${T('물량 0.5% 미만','under 0.5% of volume')}">${T('소량','small')}</span>`:''}</td><td class="r mono">${fUSD(p.u)}</td><td class="r"><span class="tag t-${p.small?'neutral':goodDir(df)}">${fPct(df)}</span></td><td class="r mono">${fW(p.w,c)}</td><td class="r mono">$${fBig(p.v)}</td><td class="r"><span class="bar-mini" style="width:${p.share/maxShare*60}px"></span> <span class="mono">${(p.share*100).toFixed(1)}%</span></td><td class="r mono" style="color:var(--${!isNum(p.chg)||Math.abs(p.chg)<.015?'ink-2':(p.chg>0)===(c.flow==='M')?'bad':'good'})">${fPct(p.chg)}</td><td class="r"><button type="button" class="btn btn-sm" data-cop="${esc(p.key)}">${T('협상 점검','Check')}</button></td></tr>`}).join('')||`<tr><td colspan="8" class="muted">${T(`"${esc(S.q)}"에 맞는 국가가 없습니다.`,`No country matches "${esc(S.q)}".`)}</td></tr>`}
   </tbody></table></div>
-  ${sel?`<div class="card fade"><div class="card-head"><h3>${esc(sel.name)} ${T('기간별 단가 vs 시장','price vs market')}</h3><div class="row"><div class="legend"><span><i style="background:var(--c2)"></i>${esc(sel.name)}</span><span><i style="background:var(--muted)"></i>${T('시장 평균','Market average')}</span></div><button class="btn btn-sm btn-ghost" data-csel-close>${T('닫기','Close')}</button></div></div>${chartSlot('cdetail',230)}
+  ${sel?`<div class="card fade"><div class="card-head"><h3>${esc(sel.name)} ${T('기간별 단가 vs 시장','price vs market')}</h3><div class="row"><div class="legend"><span><i style="background:var(--c2)"></i>${esc(sel.name)}</span><span><i style="background:var(--muted)"></i>${T('시장 평균','Market average')}</span></div><button class="btn btn-sm btn-ghost" data-csel-close>${T('닫기','Close')}</button></div></div>${chartSlot('cdetail',230)}</div>${mirrorCard(c,sel)}<div hidden>
     <div class="grid3" style="margin-top:14px"><div><div class="hint">${T('평균 단가','Avg price')}</div><div class="mono" style="font-size:19px">${fUSD(sel.u)}</div></div><div><div class="hint">${T('물량 점유율','Share')}</div><div class="mono" style="font-size:19px">${(sel.share*100).toFixed(1)}%</div></div><div><div class="hint">${T('물량 변동','Volume change')}</div><div class="mono" style="font-size:19px">${fPct(sel.volchg)}</div></div></div></div>`:''}`;
 }
 const PALETTE=['var(--c2)','var(--c3)','var(--c4)','var(--c1)'];
@@ -1560,6 +1591,7 @@ function copOut(){
   </div>
   ${/^29/.test(c.hs)?`<div class="row" style="gap:10px"><button type="button" class="chk" data-phon aria-pressed="${isPh(c.hs)}">${ico('check',14)}<span>${T('의약품 원료(API)로 보기','Treat as a pharmaceutical ingredient (API)')}</span></button><span class="hint">${T('켜면 등급·GMP·등록 서류 확인 항목과 의약품용 메일 문구를 씁니다.','Adds grade, GMP and registration checks and pharma wording to the email.')}</span></div>`:''}
   ${relCard(c,e.rel)}
+  ${e.pc?mirrorCard(c,e.pc):''}
   ${isPh(c.hs)?chkCard(o,c):''}
   <div class="cols-eq">
     <div class="card"><div class="card-head"><h3>${T('환산 과정','Conversion')}</h3><span class="hint">${T('통계 기준','basis')} ${e.basis}</span></div><ul class="conv">${convSteps(o,e,c).map(([a,b])=>`<li><span>${a}</span><span>${b}</span></li>`).join('')}</ul></div>
@@ -1746,6 +1778,8 @@ function vMethod(){
     [T('값의 기준','Valuation'),T('UN Comtrade 자료는 수입은 CIF 금액(없으면 FOB), 수출은 FOB 금액을 씁니다. 수입을 FOB로만 보고하는 나라는 자동으로 FOB 기준이 됩니다. 운송 수단은 구분하지 않고 전체(해상·항공 등 합계)를 씁니다.','Imports use the CIF value (FOB if missing), exports FOB. Reporters that only give FOB import values switch to FOB automatically. All modes of transport are combined.')],
     [T('시장 분포','Distribution'),T('국가×기간 단가를 물량으로 가중해 P10·P25·중앙값·P75·P90을 구합니다. 판정의 위치(%)는 제시가 이하에서 거래된 물량 비율입니다.','Partner × period prices weighted by volume give P10–P90. Position (%) is the share of volume at or below the offer.')],
     [T('판정·제안 가격','Verdict & targets'),T('제시가는 시장 중앙값과 비교해 %로 보여줍니다. 의약품 단가는 고가 제품 몇 건이 평균을 끌어올리는 경우가 많아, 평균보다 중앙값이 실제 거래 수준을 더 잘 나타냅니다. 판정은 제시가 이하에서 거래된 물량 비율로 정합니다. 사는 입장: 25% 이하 매우 유리 … 90% 초과 매우 불리. 1차 제시가 P25, 목표 중앙값, 상한 P75. 파는 입장은 반대입니다.','The offer is shown as % versus the market median. For medicines a few high-priced products often pull the average up, so the median reflects typical trades better. The verdict uses the share of volume traded at or below the offer. Buying: ≤25% very favorable … >90% very unfavorable; opening P25, target median, ceiling P75. Selling is reversed.')],
+    [T('상대국 통계 교차 확인','Mirror check'),T('국가별 단가에서 나라를 누르거나 협상 코파일럿에서 상대국을 고르면, 같은 거래를 상대국이 신고한 통계와 비교할 수 있습니다. 수입(CIF)과 상대국 수출(FOB)의 단가 비율이 0.9~1.25배면 운임·보험료 차이 범위로 보고 "두 통계가 맞음"으로, 벗어나면 신고 시점·분류·이전가격 차이 가능성을 경고합니다.','Click a country in Countries, or pick a counterpart in the copilot, to compare with the partner\'s own report of the same trade. A CIF/FOB ratio of 0.9–1.25 is treated as consistent (freight and insurance); outside that range the app warns about timing, classification or transfer-pricing differences.')],
+    [T('COMTRADE_KEY를 넣으면','With a COMTRADE_KEY'),T('정식 API로 한 번에 최대 12개 기간·10만 행을 받아 조회 횟수가 약 12분의 1로 줄고, 500행 제한이 사라집니다. 운송 수단별 자료를 내는 보고국(독일 등 일부 국가)은 상단에 항공·해상·육상 선택이 나타납니다. 한국은 UN Comtrade에 운송 수단별 자료를 내지 않습니다.','The official API returns up to 12 periods and 100,000 rows per call, cutting calls about 12× and removing the 500-row limit. Reporters that publish transport-mode breakdowns (e.g. Germany) get an air/sea/land selector. Korea does not publish this breakdown to UN Comtrade.')],
     [T('기간 선택','Periods'),T('UN Comtrade가 해당 보고국 자료를 실제로 공개한 최신 기간부터 거꾸로 N개 기간을 가져옵니다. 각국 보고 후 반영까지 수개월이 걸리므로, 최신 자료가 오래됐으면 화면에 안내합니다. 한국은 관세청 HSK 10단위 자료를 CSV로 올리면 더 최신·더 세분된 단가로 비교할 수 있습니다.','The latest N periods that UN Comtrade has actually published for the reporter are used. Publication lags by months, and the app tells you when the latest data is old. For Korea, uploading 10-digit HSK data from Korea Customs gives more recent and more specific prices.')],
     [T('조건 환산 (인코텀즈 2020)','Term conversion (Incoterms 2020)'),T('모든 조건을 FOB(=FCA·FAS) 값으로 바꾼 뒤 통계 기준으로 다시 계산합니다. CFR·CPT = FOB + 운임(FOB 대비 % 또는 USD/kg). CIF·CIP = CFR ÷ (1 − 1.1 × 보험료율) — 계약금액의 110%를 부보하는 규칙입니다. EXW = FOB ÷ (1 + 수출지 비용%). DAP·DPU = CIF × (1 + 도착지 비용%). DDP = DAP + CIF × 관세율%(관세는 CIF 과세가격 기준), 부가세 제외.','Every term is converted via FOB (= FCA, FAS). CFR/CPT = FOB + freight (% of FOB or USD/kg). CIF/CIP = CFR ÷ (1 − 1.1 × premium rate), the 110% cover rule. EXW = FOB ÷ (1 + origin costs %). DAP/DPU = CIF × (1 + destination costs %). DDP = DAP + CIF × duty % (duty on the CIF customs value), excluding VAT.')],
     [T('변동·집중도','Change & concentration'),T('최근 변동은 마지막 3개 기간과 그 앞 3개 기간을 같은 나라끼리 비교한 값입니다(두 기간 중 작은 물량으로 가중). 싼 나라·비싼 나라 비중이 바뀌어 생기는 평균 변화(구성 효과)는 따로 표시합니다. HHI는 점유율 제곱합 × 10,000이며 미국 법무부·FTC 2023년 기준을 따라 1,800 초과를 고집중으로 봅니다.','Change compares the last 3 periods with the 3 before, country by country (weighted by the smaller of the two volumes); mix effects are shown separately. HHI = Σ share² × 10,000; above 1,800 is highly concentrated (2023 US DOJ/FTC guidelines).')],
@@ -1865,6 +1899,7 @@ function bind(){
     if(d.chk){const c=ctx();const cur=chkSel(S.cop,c.hs).slice();const i=cur.indexOf(d.chk);if(i>=0)cur.splice(i,1);else cur.push(d.chk);S.cop.chkBy=Object.assign({},S.cop.chkBy,{[c.hs]:cur});store.set('cop',S.cop);updCop();return}
     if('phon' in d){S.phOn[S.hs]=!isPh(S.hs);store.set('phOn',S.phOn);updCop();return}
     if('fxreset' in d){S.cop.fxAuto=true;S.mg.fxAuto=true;if(S.fx)applyFx();else{S.cop.fx=String(DEF.fx);S.cop.eur=String(DEF.eur);S.mg.fx=String(DEF.fx);store.set('cop',S.cop);store.set('mg',S.mg)}render();return}
+    if(d.mirror){loadMirror(d.mirror);return}
     if('exest' in d){S.exEst=!S.exEst;store.set('exEst',S.exEst);S.cache={};render();return}
     if(d.ai){aiPolish(d.ai);return}
     if('tr' in d){aiTranslate();return}
@@ -1904,6 +1939,7 @@ function bind(){
     if(msg){er.textContent=msg;er.hidden=false;return}S.user={name:nm||em.split('@')[0],email:em};store.set('user',S.user);go('app','dash');toast(T(`${S.user.name}님, 환영합니다`,`Welcome, ${S.user.name}`))};
   const fr=$('#f-rep');if(fr)fr.onchange=()=>{S.reporter=+fr.value;store.set('reporter',S.reporter);S.cache={};S.selCountry=null;S.trendSel=null;S.mapSel=null;S.cop.country='';render();loadLive()};
   const fn=$('#f-n');if(fn)fn.onchange=()=>{S.n=+fn.value;store.set('n',S.n);S.cache={};render();if(S.src==='live')loadLive()};
+  const fm=$('#f-mot');if(fm)fm.onchange=()=>{S.mot=fm.value;S.cache={};render();loadLive()};
   const cq=$('#c-q');if(cq)cq.oninput=()=>{S.q=cq.value;const pos=cq.selectionStart;render();const c2=$('#c-q');c2.focus();try{c2.setSelectionRange(pos,pos)}catch(e){}};
   const ma=$('#t-ma');if(ma)ma.onchange=()=>{S.ma=ma.checked;render()};
   $$('[data-cop-in]').forEach(el=>{const h=()=>{const k=el.dataset.copIn,prev=S.cop[k];S.cop[k]=el.value;if(k==='qty')S.cop.qtyAuto=false;if(k==='fx'||k==='eur')S.cop.fxAuto=false;

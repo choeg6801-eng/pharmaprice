@@ -25,6 +25,7 @@ KITA 무역 AX마스터 프로젝트 · 제작: 최가은
 
 - **환율**: ExchangeRate-API의 무료 공개 환율(하루 1회 갱신)을 자동으로 불러와 USD·EUR·KRW·CNY·JPY·INR·CHF·GBP 견적을 환산합니다. 직접 입력한 환율은 유지되고, "최신 환율로 되돌리기"로 다시 받을 수 있습니다. 연결되지 않으면 2026-10-18 기준 환율을 씁니다.
 - **현지어 병기**: 영문 메일을 원본으로 두고, 상대국 언어(중국어·일본어·베트남어·스페인어 등 15개)로 AI 번역본을 함께 만들 수 있습니다. 번역본의 숫자가 영문과 다르면 경고합니다. (AI가 연결된 경우에만)
+- **상대국 통계 교차 확인(미러 데이터)**: 같은 거래를 상대국이 신고한 단가와 비교해 이 나라 단가를 근거로 써도 되는지 알려줍니다. 예: 한국의 중국산 그 밖의 항생물질(294190) 2024년 수입 CIF $127.9/kg vs 중국 신고 수출 FOB $111.3/kg → 1.15배, 운임·보험료 범위로 일치.
 - **소개 화면 미디어**: 각 화면의 실제 조작 녹화 GIF 7개와 직접 그린 일러스트(교역 루트 지도, 로그인 화면 그림)가 들어 있습니다.
 
 ## 계산 방법 요약
@@ -96,7 +97,7 @@ Vercel 프로젝트 → **Settings → Environment Variables**에서 아래 값�
 
 | 이름 | 하는 일 | 받는 곳 |
 |---|---|---|
-| `COMTRADE_KEY` | 무료 미리보기 API(요청당 500행 제한) 대신 정식 API를 써서 더 많은 자료를 안정적으로 조회 | [comtradedeveloper.un.org](https://comtradedeveloper.un.org)에서 가입 후 무료 구독 키 발급 |
+| `COMTRADE_KEY` | 정식 API 사용: 500행 제한 해제, 한 번에 최대 12개 기간 조회(호출 약 1/12), 운송 수단별(항공·해상) 선택(지원 보고국만) | [comtradedeveloper.un.org](https://comtradedeveloper.un.org)에서 가입 후 무료 구독 키 발급 |
 | `ANTHROPIC_API_KEY` | 배포 사이트에서 "AI로 다듬기"·"AI로 번역" 버튼 사용 (사용량만큼 요금 발생) | [console.anthropic.com](https://console.anthropic.com) |
 | `ANTHROPIC_MODEL` | AI 모델 이름을 바꿀 때만 (기본값 `claude-sonnet-5-5`) | |
 
