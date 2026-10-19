@@ -1,0 +1,8 @@
+{
+  "name": "pharmaprice-lens",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Pharmaceutical import/export unit price negotiation copilot using UN Comtrade data",
+  "engines": { "node": ">=18" }
+}
