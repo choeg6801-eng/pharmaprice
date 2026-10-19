@@ -9,13 +9,15 @@ const MOTS = new Set(['0', '1000', '2000', '2100', '3000', '9200']);
 
 async function getJSON(url) {
   let resp;
-  for (let i = 0; i < 3; i++) {
+  // Two attempts of up to 25 s each fit inside the 60 s function limit. Multi-period answers from the
+  // data API can take longer than a single month, so the first attempt gets the full window.
+  for (let i = 0; i < 2; i++) {
     try {
-      resp = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(15000) });
-    } catch (e) { resp = null; if (i === 2) throw e; }
+      resp = await fetch(url, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(25000) });
+    } catch (e) { resp = null; if (i === 1) throw e; }
     // The API throttles bursts: retry on 429 and on temporary 5xx errors.
     if (resp && resp.status !== 429 && resp.status < 500) break;
-    if (i < 2) await new Promise(ok => setTimeout(ok, 2000 * (i + 1)));
+    if (i < 1) await new Promise(ok => setTimeout(ok, 2500));
   }
   return resp;
 }
