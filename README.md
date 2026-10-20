@@ -10,7 +10,7 @@ KITA 무역 AX마스터 프로젝트 · 제작: 최가은
 
 | 화면 | 하는 일 |
 |---|---|
-| 품목·국가 검색 | HS 2022 코드 6,939개를 한글·영문·코드로 검색, UN Comtrade 보고국 200여 개 선택 |
+| 품목·국가 검색 | 의약품·원료 HS 2022 코드 524개(29·30류, 1302 생약 추출물, 3507 효소, 3822 진단시약)를 성분명·한글·영문·코드로 검색, UN Comtrade 보고국 200여 개 선택. 화장품·전자제품 등 의약품이 아닌 품목은 다루지 않음 |
 | 시장 대시보드 | 물량 가중 평균 단가, 최근 변동, 물동량, 최대 공급국, 집중도(HHI), 자동 시장 신호 |
 | 국가별 단가 | 상대국별 단가·물동량·점유율·변동 정렬, 소량 거래국 표시, CSV 내려받기 |
 | 추이 분석 | 최대 4개국 단가·물동량 추이, 3기간 이동평균, 변동성(CV) |
@@ -19,14 +19,16 @@ KITA 무역 AX마스터 프로젝트 · 제작: 최가은
 | 견적 비교 | 조건·통화·결제 기간이 다른 견적 최대 8개를 같은 기준으로 순위 |
 | 수출 마진 계산기 | 원가·환율·목표 마진으로 견적가 계산, 대상국 시장 단가와 비교 |
 | 협상 기록 | 저장·다시 열기·CSV 내려받기 |
-| 데이터 관리 | 실시간 / 업로드 CSV / 예시 데이터 전환, 관세청·Comtrade CSV 자동 인식 |
+| 경쟁사·제조소 | **경쟁사 비교 탭**: 식약처 완제의약품 허가 42,704건으로 성분별 허가 보유 업체의 품목 점유율(허가 품목 수 기준), 단일/복합제·전문/일반 구성, 첫 허가 연도, 원료 직접 등록 여부·원료 제조국, 원료 조달 단가 추정, 업체별 특징 태그, 차별화 포인트 아이디어, 업체별 제품 목록. **원료 등록 탭**: 식약처 DMF 9,184건으로 국내 등록 업체·해외 제조소·제조국 |
+| 국가별 규제 | 120여 개국 의약품 규제기관, PIC/S 가입 연도, WHO 공인 규제기관(WLA)·성숙도(ML3·ML4), 그 나라 제조소의 한국 DMF 등록 건수. 거래국 전체 표와 전체 국가 검색·필터, 물량 중 PIC/S·WHO 국가 비중 |
+| 데이터 관리 | UN Comtrade 직접 조회 / 업로드 CSV / 예시 데이터 전환, 관세청·Comtrade CSV 자동 인식 |
 
 한국어·영어 화면 전환을 지원합니다.
 
 - **환율**: ExchangeRate-API의 무료 공개 환율(하루 1회 갱신)을 자동으로 불러와 USD·EUR·KRW·CNY·JPY·INR·CHF·GBP 견적을 환산합니다. 직접 입력한 환율은 유지되고, "최신 환율로 되돌리기"로 다시 받을 수 있습니다. 연결되지 않으면 2026-10-18 기준 환율을 씁니다.
 - **현지어 병기**: 영문 메일을 원본으로 두고, 상대국 언어(중국어·일본어·베트남어·스페인어 등 15개)로 AI 번역본을 함께 만들 수 있습니다. 번역본의 숫자가 영문과 다르면 경고합니다. (AI가 연결된 경우에만)
 - **상대국 통계 교차 확인(미러 데이터)**: 같은 거래를 상대국이 신고한 단가와 비교해 이 나라 단가를 근거로 써도 되는지 알려줍니다. 예: 한국의 중국산 그 밖의 항생물질(294190) 2024년 수입 CIF $127.9/kg vs 중국 신고 수출 FOB $111.3/kg → 1.15배, 운임·보험료 범위로 일치.
-- **소개 화면 미디어**: 각 화면의 실제 조작 녹화 GIF 7개와 직접 그린 일러스트(교역 루트 지도, 로그인 화면 그림)가 들어 있습니다.
+- **소개 화면 미디어**: 각 화면의 실제 조작 녹화 GIF 9개(경쟁사·제조소, 국가별 규제 포함)와 직접 그린 일러스트(교역 루트 지도, 로그인 화면 그림)가 들어 있습니다.
 
 ## 계산 방법 요약
 
@@ -56,10 +58,13 @@ api/comtrade.js     UN Comtrade 조회 중계 (Vercel 서버 함수)
 api/health.js       서버 상태 확인
 api/ai.js           (선택) Claude API로 메일 다듬기·번역
 api/fx.js           ExchangeRate-API 환율 중계 (1시간 캐시)
+api/dmf.js          (선택) 식약처 DMF 실시간 조회 중계
 assets/             소개 화면 GIF·일러스트
 data/hs.json        HS 2022 품목표 + 한글 품명
 data/countries.json 국가 코드·한글명·좌표
 data/world.json     세계 지도 윤곽
+data/dmf.json       식약처 원료의약품 등록(DMF) 현황 스냅샷 (2026-10-19 기준)
+data/permits.json   식약처 의약품 제품 허가정보 스냅샷 (2026-10-19 기준, 42,704건)
 package.json
 ```
 
@@ -99,6 +104,7 @@ Vercel 프로젝트 → **Settings → Environment Variables**에서 아래 값�
 |---|---|---|
 | `COMTRADE_KEY` | 정식 API 사용: 500행 제한 해제, 한 번에 최대 12개 기간 조회(호출 약 1/12), 운송 수단별(항공·해상) 선택(지원 보고국만) | [comtradedeveloper.un.org](https://comtradedeveloper.un.org)에서 가입 후 무료 구독 키 발급 |
 | `ANTHROPIC_API_KEY` | 배포 사이트에서 "AI로 다듬기"·"AI로 번역" 버튼 사용 (사용량만큼 요금 발생) | [console.anthropic.com](https://console.anthropic.com) |
+| `DATA_GO_KR_KEY` | 경쟁사·제조소 화면을 식약처 DMF 최신 자료로 실시간 조회 (없으면 2026-10-19 스냅샷 사용) | [공공데이터포털](https://www.data.go.kr/data/15057075/openapi.do)에서 '활용신청' (자동 승인, 무료) 후 일반 인증키 |
 | `ANTHROPIC_MODEL` | AI 모델 이름을 바꿀 때만 (기본값 `claude-sonnet-5-5`) | |
 
 키가 없어도 실시간 조회와 나머지 기능은 모두 동작합니다.
@@ -123,6 +129,11 @@ Vercel 프로젝트 → **Settings → Environment Variables**에서 아래 값�
 - 국가 이름: [stefangabos/world_countries](https://github.com/stefangabos/world_countries)
 - 국가 중심 좌표: [gavinr/world-countries-centroids](https://github.com/gavinr/world-countries-centroids)
 - 세계 지도: [johan/world.geo.json](https://github.com/johan/world.geo.json) (Unlicense)
+- 의약품 제품 허가정보: 식품의약품안전처, [공공데이터포털 15095677](https://www.data.go.kr/data/15095677/openapi.do) — 2026-10-19 기준 42,704건 스냅샷
+- 원료의약품 등록(DMF): 식품의약품안전처, [공공데이터포털 15057075](https://www.data.go.kr/data/15057075/openapi.do) — 2026-10-19 기준 9,184건 스냅샷
+- PIC/S 회원 당국: [picscheme.org/en/members](https://picscheme.org/en/members) — 2026-10-20 확인
+- WHO 공인 규제기관(WLA): [WHO-Listed Authorities](https://cdn.who.int/media/docs/default-source/medicines/regulatory-systems/wla/list_of_wla.pdf) — 2025년 12월 목록
+- WHO 성숙도 3·4 국가: [List of NRAs operating at ML3 and ML4](https://www.who.int/publications/m/item/list-of-nras-operating-at-ml3-and-ml4) — 2026년 8월 목록
 - 환율: [Rates By Exchange Rate API](https://www.exchangerate-api.com) — 무료 공개 엔드포인트, 하루 1회 갱신, 화면에 출처 표기
 - 소개 화면 GIF는 이 앱을 예시 데이터로 직접 녹화한 것이고, 일러스트는 직접 그린 SVG입니다(지도 윤곽만 위 world.geo.json 사용)
 - 한글 품명: 류(2자리) 전체, 29류 호 전체, 의약품 관련 소호(2936~2942, 3001~3006)와 주요 품목 등 420여 개를 직접 정리. 나머지는 영문 공식 품명 표시

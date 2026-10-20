@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="description" content="UN Comtrade 무역통계로 수출입 단가를 판정하고 목표가와 영문 회신 메일을 만드는 협상 도구">
+<meta name="description" content="의약품·원료 수출입 단가 협상 대시보드: UN Comtrade 단가 판정, 식약처 DMF 경쟁사·제조소, 국가별 PIC/S 규제 정보">
 <style>body{margin:0}[hidden]{display:none!important}img{max-width:100%}</style>
 <title>PharmaPrice Lens</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -64,6 +64,7 @@ button,input,select,textarea{font:inherit;color:inherit}
 .seg button{min-height:38px;padding:0 14px;border:0;border-radius:9px;background:transparent;font-weight:700;font-size:14px;cursor:pointer;color:var(--muted)}
 .seg button[aria-pressed="true"]{background:var(--surface);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.14)}
 .chips{display:flex;flex-wrap:wrap;gap:6px}
+ul.ins{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:8px;line-height:1.6}
 .chipbtn{min-height:40px;padding:0 13px;border-radius:10px;border:1px solid var(--line);background:var(--surface);font-size:14px;font-weight:700;cursor:pointer;color:var(--ink-2)}
 .chipbtn[aria-pressed="true"]{background:var(--brand);border-color:var(--brand);color:var(--brand-ink)}
 .trbox{margin-top:16px;padding-top:14px;border-top:1px dashed var(--line)}
@@ -385,6 +386,7 @@ const store={get(k,d){try{const v=localStorage.getItem('ppl:'+k);return v==null?
 const isNum=v=>typeof v==='number'&&isFinite(v);
 const fP=n=>!isNum(n)?'—':Math.abs(n)>=1000?Math.round(n).toLocaleString('en-US'):Math.abs(n)>=100?n.toFixed(1):Math.abs(n)>=1?n.toFixed(2):Math.abs(n)>=0.0001||n===0?n.toFixed(4):n.toPrecision(2);
 const fUSD=n=>!isNum(n)?'—':'$'+fP(n);
+const fAbs=(n,d=1)=>!isNum(n)?'—':Math.abs(n*100).toFixed(d)+'%';
 const fPct=(n,d=1)=>!isNum(n)?'—':(n>0.0005?'+':n<-0.0005?'−':'±')+Math.abs(n*100).toFixed(d)+'%';
 const fTick=v=>!isNum(v)?'—':'$'+(Math.abs(v)>=1000?fBig(v):Math.abs(v)>=10?Math.round(v).toString():Math.abs(v)>=1?(+v.toFixed(1)).toString():(+v.toPrecision(2)).toString());
 const fBig=n=>{if(!isNum(n))return '—';const a=Math.abs(n);return a>=1e9?(n/1e9).toFixed(2)+'B':a>=1e6?(n/1e6).toFixed(1)+'M':a>=1e3?(n/1e3).toFixed(1)+'K':Math.round(n).toString()};
@@ -408,6 +410,7 @@ async function saveFile(name,text,mime){
   catch(e){toast(T('이 화면에서는 파일 저장이 막혀 있습니다. 복사 버튼을 써 주세요','Downloads are blocked here. Use the copy button instead.'))}
 }
 const ICON={
+  users:'<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M16 4.5a3.2 3.2 0 010 6.3M18 14.3c1.8.8 3 2.6 3 5.7"/>',shield:'<path d="M12 3l8 3v6c0 4.5-3.4 8.2-8 9-4.6-.8-8-4.5-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
   dash:'<path d="M3 13h8V3H3zM13 21h8V11h-8zM3 21h8v-6H3zM13 9h8V3h-8z"/>',flag:'<path d="M4 21V4M4 4h12l-2 4 2 4H4"/>',
   trend:'<path d="M3 17l6-6 4 4 8-8M15 7h6v6"/>',route:'<circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="6" r="2.5"/><path d="M8 17c7-1 3-9 8-10"/>',
   deal:'<path d="M12 3v18M17 7H9.5a3 3 0 000 6h5a3 3 0 010 6H6"/>',quotes:'<path d="M4 6h16M4 12h16M4 18h10"/><circle cx="19" cy="18" r="2"/>',
@@ -452,22 +455,26 @@ function prodName(code){const h=hsInfo(code);if(!h){const cn=csvName(code);if(cn
   if(h.ko)return h.ko;const k=hsKoCtx(code);return k?`${k.ko} · ${shortEn(h.en,46)}`:shortEn(h.en,80)}
 function prodEn(code){const h=hsInfo(code)||hsInfo(code.slice(0,6));return h?shortEn(h.en,90):'products under HS '+code}
 const NES=nm=>/areas?,? n\.?e\.?s|not elsewhere|^_x$/i.test(String(nm||''));
-function cName(key,fallback){const c=REF.byA3[key];if(c)return S.lang==='en'?c.en:c.ko;if(NES(fallback)||key==='_X'||key==='C899')return T('기타 지역(국가 미상)','Areas, n.e.s.');return fallback||key}
+function cName(key,fallback){const c=REF.byA3[key];if(c)return S.lang==='en'?c.en:c.ko;if(NES(fallback)||key==='_X'||key==='C899')return T('기타 지역(국가 미상)','Areas, n.e.s.');const f=String(fallback||'').toLowerCase();if(/free zone/.test(f))return T('자유무역지대','Free zones');if(/bunker/.test(f))return T('선박·항공기 연료 공급(벙커)','Bunkers');if(/special categor/.test(f))return T('특수 분류','Special categories');if(/^world$/.test(f))return T('전 세계','World');return fallback||key}
 function cEn(key,fallback){const c=REF.byA3[key];return c?c.en:(fallback||key)}
 const repInfo=()=>REF.byCode[S.reporter]||{c:S.reporter,a3:'KOR',ko:'한국',en:'Rep. of Korea',lat:36.4,lon:127.76};
 const repName=()=>S.lang==='en'?repInfo().en:repInfo().ko;
 const QU=()=>({u:T('개','unit'),kg:'kg',l:T('리터','litre'),m2:'m²',m:'m','2u':T('쌍','pair'),carat:'carat',g:'g',m3:'m³',kwh:'kWh',ct:'carat','1000u':T('천 개','1,000 units'),'12u':T('다스','dozen')});
 const quLabel=qu=>QU()[qu]||qu||T('수량단위','unit');
 
-function hsSearch(q){
+// The site covers medicines and their raw materials: organic chemicals/APIs (29), pharmaceutical products (30),
+// plant extracts (1302), enzymes (3507) and diagnostic reagents (3822).
+const PH_SCOPE=/^(29|30|1302|3507|3822)/;
+const inScope=code=>PH_SCOPE.test(String(code));
+function hsSearch(q,anyScope){
   q=q.trim().toLowerCase();if(!q)return [];
   const digits=q.replace(/[\s.\-]/g,'');
   const out=[];
-  if(/^\d{2,6}$/.test(digits)){
-    REF.hs.forEach(h=>{if(h.code.startsWith(digits))out.push({h,s:200-(h.code.length-digits.length)*10})});
+  if(/^\d{2,10}$/.test(digits)){const d6=digits.slice(0,6);
+    REF.hs.forEach(h=>{if((anyScope||inScope(h.code))&&h.code.startsWith(d6))out.push({h,s:200-(h.code.length-digits.length)*10})});
   }else{
     const toks=q.split(/\s+/).filter(Boolean);
-    REF.hs.forEach(h=>{let s=0;const ko=(h.ko||'').toLowerCase(),kw=(h.kw||'').toLowerCase(),en=h.en.toLowerCase();
+    REF.hs.forEach(h=>{if(!anyScope&&!inScope(h.code))return;let s=0;const ko=(h.ko||'').toLowerCase(),kw=(h.kw||'').toLowerCase(),en=h.en.toLowerCase();
       if(ko&&ko===q)s+=150;else if(ko&&toks.every(t=>ko.includes(t)))s+=100;
       if(kw&&toks.every(t=>kw.includes(t)))s+=80;
       if(toks.every(t=>en.includes(t)))s+=40+(new RegExp('\\b'+toks[0].replace(/[^a-z0-9]/g,'')).test(en)?15:0);
@@ -478,14 +485,18 @@ function hsSearch(q){
 
 /* ================= sample data ================= */
 const SAMPLE={
- '2941':{M:[['CHN',34,92000],['IND',41,31000],['ITA',210,6200],['ESP',165,4100],['JPN',140,5200],['USA',185,3100],['DEU',240,2600],['CHE',320,1300]],
-   X:[['VNM',58,8200],['JPN',120,5100],['CHN',48,6400],['IND',52,4300],['TUR',70,2100],['BRA',66,1900],['IDN',55,2600]],tr:[.035,-.01]},
- '2936':{M:[['CHN',9,152000],['DEU',34,21000],['CHE',48,15500],['NLD',26,12500],['JPN',30,8300],['USA',38,6200],['IND',14,10400]],
-   X:[['JPN',32,6100],['VNM',22,5200],['USA',36,4100],['CHN',18,7300],['THA',25,3100],['AUS',34,1600]],tr:[.05,.02]},
- '3002':{M:[['USA',18000,1820],['BEL',9500,1510],['DEU',14000,1230],['CHE',26000,920],['IRL',21000,720],['FRA',8000,810],['NLD',6500,610],['JPN',4200,310]],
-   X:[['USA',32000,930],['CHE',25000,410],['JPN',18000,320],['VNM',2600,640],['TUR',9000,520],['BRA',7000,710],['DEU',28000,360]],tr:[.02,.03]},
- '3004':{M:[['USA',650,61000],['DEU',420,45500],['CHE',1800,22300],['IRL',1500,18100],['FRA',380,25400],['JPN',260,20200],['ITA',300,16100],['GBR',520,12300]],
-   X:[['JPN',95,30400],['USA',160,22100],['VNM',42,40500],['CHN',70,25300],['TUR',58,15200],['BRA',66,12400],['PHL',38,18300]],tr:[.025,.015]}
+ '2941':{M:[['CHN',34,92000],['IND',41,31000],['ITA',210,6200],['ESP',165,4100],['JPN',140,5200],['USA',185,3100],['DEU',240,2600],['CHE',320,1300],
+   ['AUT',150,2200],['SVN',175,1500],['FRA',205,1200],['IRL',260,900],['NLD',190,800],['GBR',230,700],['TWN',95,1100],['SGP',150,600],['HUN',160,500],['ISR',220,300],['VNM',48,700],['THA',60,400],['IDN',52,350],['MEX',88,250]],
+   X:[['VNM',58,8200],['JPN',120,5100],['CHN',48,6400],['IND',52,4300],['TUR',70,2100],['BRA',66,1900],['IDN',55,2600],['PHL',54,2300],['THA',61,1800],['MYS',63,1200],['PAK',47,1500],['BGD',45,1300],['EGY',59,900],['SAU',82,700],['ARE',80,500],['MEX',72,800],['COL',69,600],['PER',67,400],['USA',140,700],['DEU',150,300]],tr:[.035,-.01]},
+ '2936':{M:[['CHN',9,152000],['DEU',34,21000],['CHE',48,15500],['NLD',26,12500],['JPN',30,8300],['USA',38,6200],['IND',14,10400],
+   ['FRA',29,4100],['GBR',31,3500],['BEL',27,2600],['ESP',24,2200],['ITA',33,1900],['IRL',36,1100],['DNK',40,800],['SGP',28,900],['THA',17,1500],['VNM',13,1300],['MYS',19,700],['BRA',22,500],['CAN',35,600]],
+   X:[['JPN',32,6100],['VNM',22,5200],['USA',36,4100],['CHN',18,7300],['THA',25,3100],['AUS',34,1600],['PHL',21,2400],['IDN',20,2100],['MYS',24,1500],['TWN',27,1300],['IND',17,1100],['SGP',30,900],['HKG',33,700],['NZL',36,400],['MEX',26,600],['SAU',31,500]],tr:[.05,.02]},
+ '3002':{M:[['USA',18000,1820],['BEL',9500,1510],['DEU',14000,1230],['CHE',26000,920],['IRL',21000,720],['FRA',8000,810],['NLD',6500,610],['JPN',4200,310],
+   ['ITA',11000,420],['GBR',15000,380],['AUT',12500,260],['DNK',17000,210],['SWE',13500,190],['ESP',7600,240],['SGP',16000,150],['CAN',9800,130],['AUS',8800,90],['ISR',10500,70],['IND',1600,520],['CHN',2100,330]],
+   X:[['USA',32000,930],['CHE',25000,410],['JPN',18000,320],['VNM',2600,640],['TUR',9000,520],['BRA',7000,710],['DEU',28000,360],['IDN',3100,450],['THA',4200,380],['PHL',2900,330],['MYS',5200,260],['SAU',11000,180],['EGY',3500,240],['MEX',8000,210],['COL',6800,170],['PER',5900,120],['ARG',7400,110],['CHN',12000,290],['IND',4500,200]],tr:[.02,.03]},
+ '3004':{M:[['USA',650,61000],['DEU',420,45500],['CHE',1800,22300],['IRL',1500,18100],['FRA',380,25400],['JPN',260,20200],['ITA',300,16100],['GBR',520,12300],
+   ['BEL',610,9800],['NLD',450,8700],['ESP',330,7600],['SWE',700,5200],['DNK',820,4800],['AUT',560,4300],['SGP',900,3100],['CAN',480,2900],['IND',45,21000],['CHN',60,12500],['ISR',380,1800],['PRI',1100,2600],['HUN',260,2100],['SVN',300,1700],['AUS',420,900]],
+   X:[['JPN',95,30400],['USA',160,22100],['VNM',42,40500],['CHN',70,25300],['TUR',58,15200],['BRA',66,12400],['PHL',38,18300],['IDN',40,14800],['THA',47,12100],['MYS',52,9800],['MMR',33,6100],['KHM',35,5200],['MNG',41,3900],['UZB',39,4300],['KAZ',44,3600],['RUS',63,7200],['SAU',88,4100],['ARE',92,3500],['EGY',36,4800],['PER',55,2800],['MEX',60,3900],['CHL',71,2200]],tr:[.025,.015]}
 };
 const SAMPLE_CODES=Object.keys(SAMPLE);
 function mulberry(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
@@ -517,7 +528,7 @@ Object.assign(S,{
   mg:Object.assign({country:'',cost:'',pack:'',inc:'FOB',freight:'1.2',ins:'0.2',margin:'25',fx:String(DEF.fx),hs:''},store.get('mg',{})),
   hist:store.get('hist',[]),quotes:store.get('quotes',{}),guides:store.get('guides',{}),welcome:store.get('welcome',true),
   heroHs:'2941',heroRole:'buy',heroPrice:'',tourTab:'copilot',imp:null,confirmClear:false,
-  pq:'',pOpen:false,pAct:0,aiBusy:false,aiOrig:null,aiWarn:null,exEst:store.get('exEst',false),fx:store.get('fx',null),phOn:store.get('phOn',{}),qrate:store.get('qrate','5')
+  pq:'',pOpen:false,pAct:0,dmfIng:(store.get('dmf',{})||{}).ing||'',dmfFor:(store.get('dmf',{})||{}).hs||'',dmfQ:'',dmfMore:false,dmfKey:false,rivTab:'market',compSel:null,compMore:false,regQ:'',regF:'all',trendAll:false,mapAll:false,regMore:false,regPMore:false,dmfLive:{},aiBusy:false,aiOrig:null,aiWarn:null,exEst:store.get('exEst',false),fx:store.get('fx',null),phOn:store.get('phOn',{}),qrate:store.get('qrate','5')
 });
 if(S.csv&&!(S.csv.recs&&Array.isArray(S.csv.recs)&&S.csv.recs.length))S.csv=null;
 /* sanitise values saved by older versions or corrupted storage */
@@ -526,7 +537,7 @@ if(S.csv&&!(S.csv.recs&&Array.isArray(S.csv.recs)&&S.csv.recs.length))S.csv=null
   if(!obj(S.quotes))S.quotes={};Object.keys(S.quotes).forEach(k=>{if(!Array.isArray(S.quotes[k]))delete S.quotes[k]});
   if(!obj(S.guides))S.guides={};if(!obj(S.phOn))S.phOn={};
   if(!(S.fx&&obj(S.fx.rates)&&S.fx.rates.KRW>0&&S.fx.rates.EUR>0))S.fx=null;
-  if(typeof S.hs!=='string'||!/^\d{2,10}$/.test(S.hs))S.hs='2941';
+  if(typeof S.hs!=='string'||!/^\d{2,10}$/.test(S.hs)||(!PH_SCOPE.test(S.hs)&&!(S.csv&&S.csv.recs&&S.csv.recs.some(r=>r.hs===S.hs))))S.hs='2941';
   if(!Number.isFinite(+S.reporter))S.reporter=410;S.reporter=+S.reporter;
   if(S.freq!=='M'&&S.freq!=='A')S.freq='M';if(![5,6,12,24].includes(+S.n))S.n=12;S.n=+S.n;
   if(S.user&&!obj(S.user))S.user=null;
@@ -540,7 +551,7 @@ function srcRecs(){
   return ds.recs.filter(r=>r.hs===S.hs||r.hs.startsWith(S.hs)||(S.hs.length>r.hs.length&&false));
 }
 function dsInfo(){
-  if(S.src==='live'){const L=S.live;return {kind:'live',label:T('UN Comtrade 실시간','UN Comtrade live'),detail:L&&L.periods&&L.periods.length?`${repName()} ${T('보고','reported')} · ${pl(L.periods[0])}–${pl(L.periods[L.periods.length-1])} · ${L.freq==='A'?T('연간','annual'):T('월간','monthly')}`:''}}
+  if(S.src==='live'){const L=S.live;return {kind:'live',label:T('UN Comtrade 직접 조회','UN Comtrade (direct)'),detail:L&&L.periods&&L.periods.length?`${repName()} ${T('보고','reported')} · ${pl(L.periods[0])}–${pl(L.periods[L.periods.length-1])} · ${L.freq==='A'?T('연간','annual'):T('월간','monthly')}`:''}}
   if(S.src==='csv'&&S.csv)return {kind:'csv',label:S.csv.label,detail:S.csv.detail};
   return {kind:'sample',label:T('예시 데이터','Sample data'),detail:T(S.sample.detail,S.sample.detailEn)};
 }
@@ -639,20 +650,20 @@ async function loadMirror(pk){const c=ctx();const pi=REF.byA3[pk];const key=mirr
 function refreshMirror(){const el=$$('[data-mirror-box]');el.forEach(b=>{const c=ctx();const p=c.partners.find(x=>x.key===b.dataset.mirrorBox);if(p)b.outerHTML=mirrorCard(c,p)})}
 function mirrorCard(c,p){if(S.src!=='live'||c.measure!=='kg'||!REF.byA3[p.key])return '';const m=(S.mirror||{})[mirrorKey(c,p.key)];const ours=c.flow==='M'?'CIF':'FOB',theirs=c.flow==='M'?'FOB':'CIF';
   let body;
-  if(!m)body=`<p class="small" style="color:var(--ink-2)">${T(`같은 거래를 ${esc(p.name)}가 신고한 통계(미러 데이터)와 비교해 이 나라 단가를 믿어도 되는지 확인합니다.`,`Compare with ${esc(p.name)}'s own report of the same trade (mirror data) to see whether this price is reliable.`)}</p><button type="button" class="btn btn-sm" style="margin-top:10px" data-mirror="${esc(p.key)}">${ico('refresh',16)}${T('상대국 신고로 확인','Check against partner data')}</button>`;
+  if(!m)body=`<p class="small" style="color:var(--ink-2)">${T(`같은 거래를 ${esc(jo(p.name,'이','가'))} 신고한 통계(미러 데이터)와 비교해 이 나라 단가를 믿어도 되는지 확인합니다.`,`Compare with ${esc(p.name)}'s own report of the same trade (mirror data) to see whether this price is reliable.`)}</p><button type="button" class="btn btn-sm" style="margin-top:10px" data-mirror="${esc(p.key)}">${ico('refresh',16)}${T('상대국 신고로 확인','Check against partner data')}</button>`;
   else if(m.status==='loading')body=`<p class="small">${T('상대국 통계를 불러오는 중…','Loading partner data…')}</p>`;
   else if(m.status==='ok'){const cifU=c.flow==='M'?p.u:m.u,fobU=c.flow==='M'?m.u:p.u,r=cifU/fobU,kgd=m.kg/p.w-1;const ok=r>=.9&&r<=1.25;
     body=`<div class="grid2" style="margin-top:4px"><div><div class="hint">${esc(repName())} ${T('신고','report')} (${ours})</div><div class="mono" style="font-size:20px">${fUSD(p.u)}${perU(c)}</div><div class="hint">${fW(p.w,c)}</div></div><div><div class="hint">${esc(p.name)} ${T('신고','report')} (${theirs})</div><div class="mono" style="font-size:20px">${fUSD(m.u)}${perU(c)}</div><div class="hint">${fW(m.kg,c)} · ${m.n}${T('개 기간','periods')}</div></div></div>
     <div class="note" style="margin-top:12px;${ok?'background:var(--good-bg);color:var(--good)':''}">${ok?T(`CIF가 FOB의 ${r.toFixed(2)}배로, 운임·보험료 차이 범위 안에서 두 통계가 맞습니다. 이 나라 단가는 근거로 쓰기 좋습니다.`,`CIF is ${r.toFixed(2)}× FOB, within the freight and insurance range. The two reports agree, so this price is solid evidence.`):T(`CIF가 FOB의 ${r.toFixed(2)}배로, 운임·보험료로 설명하기 어려운 차이가 있습니다(중량 차이 ${fPct(kgd)}). 신고 시점·품목 분류·이전가격 차이일 수 있으니 이 나라 단가는 신중하게 쓰세요.`,`CIF is ${r.toFixed(2)}× FOB, more than freight and insurance explain (weight differs ${fPct(kgd)}). Timing, classification or transfer pricing may differ, so use this price with care.`)}</div>${m.err?`<p class="hint" style="margin-top:6px">${T('일부 기간은 불러오지 못했습니다.','Some periods failed to load.')}</p>`:''}`}
-  else body=`<p class="small">${m.status==='na'?T('이 나라는 상대국 통계를 조회할 수 없습니다.','Partner data is not available for this country.'):m.status==='empty'?T(`${esc(p.name)}는 같은 기간에 이 품목을 보고하지 않았거나 중량이 없습니다.`,`${esc(p.name)} did not report this product with weights for these periods.`):T('상대국 통계를 불러오지 못했습니다.','Could not load partner data.')}</p>${m.status==='error'?`<button type="button" class="btn btn-sm" style="margin-top:8px" data-mirror="${esc(p.key)}">${T('다시 시도','Retry')}</button>`:''}`;
+  else body=`<p class="small">${m.status==='na'?T('이 나라는 상대국 통계를 조회할 수 없습니다.','Partner data is not available for this country.'):m.status==='empty'?T(`${esc(jo(p.name,'은','는'))} 같은 기간에 이 품목을 보고하지 않았거나 중량이 없습니다.`,`${esc(p.name)} did not report this product with weights for these periods.`):T('상대국 통계를 불러오지 못했습니다.','Could not load partner data.')}</p>${m.status==='error'?`<button type="button" class="btn btn-sm" style="margin-top:8px" data-mirror="${esc(p.key)}">${T('다시 시도','Retry')}</button>`:''}`;
   return `<div class="card" data-mirror-box="${esc(p.key)}"><div class="card-head"><h3>${T('상대국 통계로 교차 확인','Mirror check')}</h3><span class="hint">${esc(p.name)}</span></div>${body}</div>`}
 function motAvail(){if(S.src!=='live'||S.api!=='proxy'||!S.apiKey)return false;const c=S.daCache&&S.daCache[S.reporter+'|'+S.freq];if(!c||!c.motExt)return false;const ps=Object.keys(c.motExt).sort().slice(-3);return ps.some(p=>c.motExt[p])}
-function freshNote(c){if(S.src!=='live'||!c.periods.length)return '';const fe=S.live&&S.live.err&&S.live.status==='ok'?`<div class="note" style="margin-bottom:16px">${T(`${S.live.err}개 기간을 불러오지 못해 나머지 기간으로 계산했습니다.`,`${S.live.err} period(s) failed to load, so the rest were used.`)} <button type="button" class="btn btn-sm" data-reload>${T('다시 불러오기','Reload')}</button></div>`:'';const tr=fe+S.live&&S.live.trunc?`<div class="note" style="margin-bottom:16px">${T('일부 기간이 무료 API의 500행 제한에 걸려 상대국 일부가 빠졌을 수 있습니다. Vercel 설정에 무료 COMTRADE_KEY를 넣으면 전체 자료를 받습니다.','Some periods hit the free API limit of 500 rows, so a few partners may be missing. Add a free COMTRADE_KEY in Vercel to get everything.')}</div>`:'';const last=c.periods[c.periods.length-1],now=new Date();
+function freshNote(c){if(S.src!=='live'||!c.periods.length)return '';const fe=S.live&&S.live.err&&S.live.status==='ok'?`<div class="note" style="margin-bottom:16px">${T(`${S.live.err}개 기간을 불러오지 못해 나머지 기간으로 계산했습니다.`,`${S.live.err} period(s) failed to load, so the rest were used.`)} <button type="button" class="btn btn-sm" data-reload>${T('다시 불러오기','Reload')}</button></div>`:'';const tr=fe+S.live&&S.live.trunc?`<div class="note" style="margin-bottom:16px">${T('일부 기간이 무료 조회 한도(500행)에 걸려 상대국 일부가 빠졌을 수 있습니다. 전체 자료가 필요하면 사이트 관리자에게 UN Comtrade 키 설정을 요청하세요.','Some periods hit the free API limit of 500 rows, so a few partners may be missing. Add a free COMTRADE_KEY in Vercel to get everything.')}</div>`:'';const last=c.periods[c.periods.length-1],now=new Date();
   const lag=c.annual?(now.getFullYear()-(+last))*12:(now.getFullYear()-(+last.slice(0,4)))*12+(now.getMonth()+1-(+last.slice(5,7)));
   if(c.annual?(+last)>=now.getFullYear()-1:lag<=4)return tr;
   return `<div class="note" style="margin-bottom:16px">${T(`UN Comtrade에 반영된 ${esc(repName())}의 최신 자료는 <b>${pl(last)}</b>입니다(각국 보고 후 반영까지 수개월 걸립니다). ${S.reporter===410?'더 최근 단가가 필요하면 관세청 수출입무역통계(tradedata.go.kr)에서 품목·국가별 자료를 CSV로 받아 "데이터 관리"에서 올리세요.':'더 최근 단가가 필요하면 그 나라 세관 통계를 CSV로 받아 "데이터 관리"에서 올리세요.'}`,`The latest ${esc(repName())} data in UN Comtrade is <b>${pl(last)}</b> (publication lags by months). For more recent prices, download customs statistics as CSV and upload them under Data sources.`)}</div>`+tr}
 async function detectApi(){
-  try{const r=await fetchT('api/health',{cache:'no-store'},8000);if(r.ok){const j=await r.json();if(j&&j.ok){S.api='proxy';S.apiKey=!!j.comtradeKey;S.ai=j.ai?'api':S.ai;return}}}catch(e){}
+  try{const r=await fetchT('api/health',{cache:'no-store'},8000);if(r.ok){const j=await r.json();if(j&&j.ok){S.api='proxy';S.apiKey=!!j.comtradeKey;S.dmfKey=!!j.dmfKey;S.ai=j.ai?'api':S.ai;return}}}catch(e){}
   try{const ctl=new AbortController();const t=setTimeout(()=>ctl.abort(),6000);
     const r=await fetch('https://comtradeapi.un.org/public/v1/preview/C/A/HS?reporterCode=410&period=2023&cmdCode=294190&flowCode=M&includeDesc=true',{signal:ctl.signal});clearTimeout(t);
     if(r.ok){const j=await r.json();if(j&&Array.isArray(j.data))S.api='direct'}}catch(e){}
@@ -733,7 +744,7 @@ function signals(c){
   const per=T(c.annual?'년':'개 기간',c.annual?' years':' periods');
   if(isNum(c.chg)){const up=c.chg>0.015,dn=c.chg<-0.015;
     out.push({tone:up?(buy?'bad':'good'):dn?(buy?'good':'bad'):'neutral',tag:up?T('단가 상승','Price up'):dn?T('단가 하락','Price down'):T('단가 보합','Price flat'),
-      text:T(`같은 나라끼리 비교하면 최근 ${c.h}${per} 단가가 직전 ${c.h}${per}보다 <b>${fPct(c.chg)}</b> ${up?'올랐습니다':dn?'내렸습니다':'움직였습니다'}.${buy?(dn?' 매입가 인하를 요구할 근거가 됩니다.':up?' 장기 계약으로 가격을 고정하는 안을 검토하세요.':' 가격보다 납기·결제 조건 협상에 집중하기 좋은 시기입니다.'):(up?' 판매가 인상 근거로 쓸 수 있습니다.':dn?' 가격 방어 논리를 미리 준비하세요.':' 현재 가격을 유지하기 좋은 시기입니다.')}`,
+      text:T(`같은 나라끼리 비교하면 최근 ${c.h}${per} 단가가 직전 ${c.h}${per}보다 <b>${up||dn?fAbs(c.chg):fPct(c.chg)}</b> ${up?'올랐습니다':dn?'내렸습니다':'움직였습니다'}.${buy?(dn?' 매입가 인하를 요구할 근거가 됩니다.':up?' 장기 계약으로 가격을 고정하는 안을 검토하세요.':' 가격보다 납기·결제 조건 협상에 집중하기 좋은 시기입니다.'):(up?' 판매가 인상 근거로 쓸 수 있습니다.':dn?' 가격 방어 논리를 미리 준비하세요.':' 현재 가격을 유지하기 좋은 시기입니다.')}`,
         `Comparing the same countries, unit prices over the last ${c.h}${per} moved <b>${fPct(c.chg)}</b> versus the ${c.h} before.${buy?(dn?' This supports a request for a lower price.':up?' Consider locking the price with a longer contract.':' Focus on lead time and payment terms rather than price.'):(up?' This supports a price increase.':dn?' Prepare arguments to defend your price.':' A good time to hold your current price.')}`)});}
   if(isNum(c.chg)&&isNum(c.chgRaw)&&Math.abs(c.chgRaw-c.chg)>.03)out.push({tone:'neutral',tag:T('구성 변화','Mix shift'),text:T(`전체 평균 단가는 <b>${fPct(c.chgRaw)}</b> 움직였지만 같은 나라끼리 비교하면 ${fPct(c.chg)}입니다. 차이는 싼 나라·비싼 나라의 물량 비중이 바뀐 탓이니, 시세 변화로 오해하지 마세요.`,`The overall average moved <b>${fPct(c.chgRaw)}</b>, but like-for-like by country it moved ${fPct(c.chg)}. The gap comes from a shift between cheaper and pricier origins, not a market price change.`)});
   const ps=c.partners.filter(p=>p.share>=.02&&isNum(p.u));
@@ -806,13 +817,13 @@ function judge(rank,buy){
     return ['bad',T('매우 불리','Very unfavorable'),T('시장 상위 10% 고가입니다. 대체 공급처 견적부터 확보하세요.','In the most expensive 10%. Get alternative quotes first.')]}
   if(rank>=.75)return ['good',T('매우 유리','Very favorable'),T('시장 상위 25% 판매가입니다. 좋은 조건이니 빠르게 확정하세요.','In the highest 25% of selling prices. Confirm quickly.')];
   if(rank>=.5)return ['good',T('유리','Favorable'),T('중앙값보다 높은 판매가입니다. 수용 가능한 조건입니다.','Above the median. Acceptable.')];
-  if(rank>=.25)return ['warn',T('방어 필요','Defend price'),T('중앙값보다 낮습니다. 목표가 근거를 제시해 가격을 방어하세요.','Below the median. Defend your price with the target.')];
-  if(rank>=.1)return ['bad',T('불리','Unfavorable'),T('시장 하위 25% 가격입니다. 이 가격 수용은 재검토하세요.','In the lowest 25%. Reconsider accepting.')];
+  if(rank>=.25)return ['warn',T('방어 필요','Defend price'),T('중앙값보다 낮습니다. 목표가 근거를 제시해 가격을 방어하세요.','Below the median. Use the market data to defend your price.')];
+  if(rank>=.1)return ['bad',T('불리','Unfavorable'),T('시장 하위 25% 가격입니다. 이 가격을 받아들일지 다시 검토하세요.','In the lowest 25%. Reconsider accepting it.')];
   return ['bad',T('매우 불리','Very unfavorable'),T('시장 하위 10% 가격입니다. 마진 손실 위험이 큽니다.','In the lowest 10%. High risk of margin loss.')];
 }
 function evaluate(c,o,role){
   const price=n(o.price,NaN);if(!isNum(price)||price<=0||!c.obs.length)return null;
-  const R=rates(o),basis=c.basis,usd=toUSDu(price,o,R),norm=toBasis(usd,o,R,basis);if(!(norm>0))return null;
+  const R=rates(o),basis=c.basis,usd=toUSDu(price,o,R),norm=toBasis(usd,o,R,basis);if(!(norm>0)||!(fobOf(o.inc,usd,R)>0))return null;
   const pc=o.country?c.partners.find(p=>p.key===o.country):null;
   const rank=wrank(c.obs,norm),diff=norm/c.q.p50-1,diffAvg=norm/c.avg-1,buy=role==='buy';
   const [tone,short,verdict]=judge(rank,buy);
@@ -832,14 +843,14 @@ function convSteps(o,e,c){
 }
 function points(c,o,e){
   const L=[],buy=e.buy,bn=e.basis,rn=repName();const pu=perU(c);
-  L.push(T(`제시가를 ${rn} ${buy?'수입':'수출'} 신고 기준(${bn})으로 바꾸면 <b>${fUSD(e.norm)}${pu}</b>이고, 시장 중앙값 ${fUSD(c.q.p50)}보다 <b>${fPct(e.diff)}</b>, 물량 가중평균 ${fUSD(c.avg)}보다 ${fPct(e.diffAvg)}입니다.`,`On ${rn}'s ${buy?'import':'export'} declaration basis (${bn}) the offer is <b>${fUSD(e.norm)}${pu}</b>: <b>${fPct(e.diff)}</b> versus the market median of ${fUSD(c.q.p50)} and ${fPct(e.diffAvg)} versus the weighted average of ${fUSD(c.avg)}.`));
+  L.push(T(`제시가를 ${rn} ${buy?'수입':'수출'} 신고 기준(${bn})으로 바꾸면 <b>${fUSD(e.norm)}${pu}</b>이고, 시장 중앙값 ${fUSD(c.q.p50)} 대비 <b>${fPct(e.diff)}</b>, 물량 가중평균 ${fUSD(c.avg)} 대비 ${fPct(e.diffAvg)}입니다.`,`On ${rn}'s ${buy?'import':'export'} declaration basis (${bn}) the offer is <b>${fUSD(e.norm)}${pu}</b>: <b>${fPct(e.diff)}</b> versus the market median of ${fUSD(c.q.p50)} and ${fPct(e.diffAvg)} versus the weighted average of ${fUSD(c.avg)}.`));
   const ps=c.partners.filter(p=>p.share>=.02&&isNum(p.u));
-  if(ps.length){if(buy){const lo=ps.reduce((a,b)=>a.u<b.u?a:b);if((!e.pc||e.pc.key!==lo.key)&&lo.u<e.norm)L.push(T(`<b>${esc(lo.name)}</b> 공급분 평균은 ${fUSD(lo.u)}${pu}로 제시가보다 <b>${fPct(lo.u/e.norm-1)}</b> 쌉니다. 대체 공급처 견적을 근거로 쓸 수 있습니다.`,`Supply from <b>${esc(lo.name)}</b> averaged ${fUSD(lo.u)}${pu}, <b>${fPct(lo.u/e.norm-1)}</b> versus the offer. Use alternative quotes as leverage.`)+(isPh(c.hs)?T(' 단, 등록된 의약품은 공급처를 바꾸려면 허가 변경(보통 6~18개월)이 필요하니, 실제로 전환할 수 있는 공급처일 때 효과가 큽니다.',' Note that switching the source of a registered medicine needs a regulatory variation (often 6–18 months), so this works best with sources you could really switch to.'):''))}
+  if(ps.length){if(buy){const lo=ps.reduce((a,b)=>a.u<b.u?a:b);if((!e.pc||e.pc.key!==lo.key)&&lo.u<e.norm)L.push(T(`<b>${esc(lo.name)}</b> 공급분 평균은 ${fUSD(lo.u)}${pu}이고, 제시가보다 <b>${fAbs(lo.u/e.norm-1)}</b> 쌉니다. 대체 공급처 견적을 근거로 쓸 수 있습니다.`,`Supply from <b>${esc(lo.name)}</b> averaged ${fUSD(lo.u)}${pu}, <b>${fPct(lo.u/e.norm-1)}</b> versus the offer. Use alternative quotes as leverage.`)+(isPh(c.hs)?T(' 단, 등록된 의약품은 공급처를 바꾸려면 허가 변경(보통 6~18개월)이 필요하니, 실제로 전환할 수 있는 공급처일 때 효과가 큽니다.',' Note that switching the source of a registered medicine needs a regulatory variation (often 6–18 months), so this works best with sources you could really switch to.'):''))}
     else{const hi=ps.reduce((a,b)=>a.u>b.u?a:b);if((!e.pc||e.pc.key!==hi.key)&&hi.u>e.norm)L.push(T(`<b>${esc(hi.name)}</b> 수출분 평균은 ${fUSD(hi.u)}${pu}입니다. 같은 품목이 더 높은 가격에 팔리는 시장이 있다는 근거입니다.`,`Exports to <b>${esc(hi.name)}</b> averaged ${fUSD(hi.u)}${pu}, evidence that the same product sells higher elsewhere.`))}}
-  if(e.pc)L.push(T(`<b>${esc(e.pc.name)}</b>${buy?' 공급분':' 수출분'}만 보면 평균 ${fUSD(e.pc.u)}${pu}이고, 제시가는 그보다 <b>${fPct(e.pcDiff)}</b>입니다.${e.pc.small?' (거래량이 적어 참고용)':''}`,`For <b>${esc(e.pc.name)}</b> alone the average is ${fUSD(e.pc.u)}${pu}; the offer is <b>${fPct(e.pcDiff)}</b> versus that.${e.pc.small?' (small volume, indicative only)':''}`));
+  if(e.pc)L.push(T(`<b>${esc(e.pc.name)}</b>${buy?' 공급분':' 수출분'}만 보면 평균 ${fUSD(e.pc.u)}${pu}이고, 제시가는 그 대비 <b>${fPct(e.pcDiff)}</b>입니다.${e.pc.small?' (거래량이 적어 참고용)':''}`,`For <b>${esc(e.pc.name)}</b> alone the average is ${fUSD(e.pc.u)}${pu}; the offer is <b>${fPct(e.pcDiff)}</b> versus that.${e.pc.small?' (small volume, indicative only)':''}`));
   if(isNum(c.chg)&&Math.abs(c.chg)>.01){
-    if(buy)L.push(c.chg<0?T(`최근 시장 단가가 <b>${fPct(c.chg)}</b> 내렸습니다. 지금이 인하를 요청하기 좋은 시점입니다.`,`Market prices recently fell <b>${fPct(c.chg)}</b>. A good moment to ask for a reduction.`):T(`최근 시장 단가가 <b>${fPct(c.chg)}</b> 올랐습니다. 단가 인하보다 수량 할인이나 결제 조건 완화를 요청하는 편이 현실적입니다.`,`Market prices recently rose <b>${fPct(c.chg)}</b>. Volume discounts or better payment terms are more realistic than a price cut.`));
-    else L.push(c.chg>0?T(`최근 시장 단가가 <b>${fPct(c.chg)}</b> 올랐습니다. 가격 인하 요구를 거절할 근거가 됩니다.`,`Market prices recently rose <b>${fPct(c.chg)}</b>, grounds to decline a price cut.`):T(`최근 시장 단가가 <b>${fPct(c.chg)}</b> 내렸습니다. 가격 대신 납기·물량 조건으로 양보 폭을 좁히세요.`,`Market prices recently fell <b>${fPct(c.chg)}</b>. Concede on lead time or volume rather than price.`));}
+    if(buy)L.push(c.chg<0?T(`최근 시장 단가가 <b>${fAbs(c.chg)}</b> 내렸습니다. 지금이 인하를 요청하기 좋은 시점입니다.`,`Market prices recently fell <b>${fPct(c.chg)}</b>. A good moment to ask for a reduction.`):T(`최근 시장 단가가 <b>${fPct(c.chg)}</b> 올랐습니다. 단가 인하보다 수량 할인이나 결제 조건 완화를 요청하는 편이 현실적입니다.`,`Market prices recently rose <b>${fPct(c.chg)}</b>. Volume discounts or better payment terms are more realistic than a price cut.`));
+    else L.push(c.chg>0?T(`최근 시장 단가가 <b>${fPct(c.chg)}</b> 올랐습니다. 가격 인하 요구를 거절할 근거가 됩니다.`,`Market prices recently rose <b>${fPct(c.chg)}</b>, grounds to decline a price cut.`):T(`최근 시장 단가가 <b>${fAbs(c.chg)}</b> 내렸습니다. 가격 대신 납기·물량 조건으로 양보 폭을 좁히세요.`,`Market prices recently fell <b>${fPct(c.chg)}</b>. Concede on lead time or volume rather than price.`));}
   if(e.qty>0&&c.periods.length){const base=e.pc?e.pc.w/c.periods.length:c.K/c.periods.length;const r=base>0?e.qty/base:NaN;
     if(isNum(r))L.push(T(`주문 수량 ${e.qty.toLocaleString()}${c.unit}은 ${e.pc?esc(e.pc.name)+' ':''}기간당 평균 ${buy?'수입':'수출'} 물량의 <b>${(r*100).toFixed(r<.1?1:0)}%</b>입니다.${r>=.2?(buy?' 물량 규모를 근거로 단가 인하를 요구할 수 있습니다.':' 큰 물량이라 상대가 단가 인하를 요구할 가능성이 높습니다.'):''}`,`An order of ${e.qty.toLocaleString()} ${c.unit} is <b>${(r*100).toFixed(r<.1?1:0)}%</b> of average ${e.pc?esc(e.pc.name)+' ':''}${buy?'import':'export'} volume per period.${r>=.2?(buy?' Use the volume to ask for a lower price.':' Expect the buyer to ask for a volume discount.'):''}`));}
   if(o.inc!==e.basis){const fr=e.R.frm==='abs'?'$'+fP(e.R.fa)+perU(c):(e.R.fr*100).toFixed(1)+'%';
@@ -863,6 +874,11 @@ function docList(o,c){const ship=['Commercial invoice, packing list, B/L or AWB'
   if(!isPh(c.hs))return 'Documents per shipment:\n'+ship.concat(['[Other documents]']).map(d=>'  - '+d).join('\n');
   const sel=chkSel(o,c.hs),P=PH_CHK().filter(x=>sel.includes(x[0])),q=P.filter(x=>x[3]==='q').map(x=>x[2]),sh=P.filter(x=>x[3]==='s').map(x=>x[2]).concat(ship);
   return (q.length?'Supplier qualification documents:\n'+q.map(d=>'  - '+d).join('\n')+'\n':'')+'Documents per shipment:\n'+sh.map(d=>'  - '+d).join('\n')}
+// Seller side: the same items are documents we provide, not ones we ask for.
+function docListSell(o,c){const ship=['Commercial invoice, packing list, B/L or AWB','Certificate of origin'];
+  if(!isPh(c.hs))return 'With the shipment we will provide:\n'+ship.map(d=>'  - '+d).join('\n');
+  const sel=chkSel(o,c.hs),P=PH_CHK().filter(x=>sel.includes(x[0])),q=P.filter(x=>x[3]==='q').map(x=>x[2]),sh=P.filter(x=>x[3]==='s').map(x=>x[2]).concat(ship);
+  return (q.length?'Quality and regulatory documents we can provide:\n'+q.map(d=>'  - '+d).join('\n')+'\n':'')+'With each shipment we will provide:\n'+sh.map(d=>'  - '+d).join('\n')}
 function emailText(c,o,e){
   const R=e.R,Tg=e.T,tg=toOffer(Tg.goal,o,R,e.basis),op=toOffer(Tg.open,o,R,e.basis);
   const ph=isPh(c.hs),pe0=prodEn(c.hs),pe=ph?'[Product name (INN), grade]':(pe0&&pe0.length<=40&&!/n\.e\.c/i.test(pe0)?pe0:'[Product name]');
@@ -924,7 +940,9 @@ We are pleased to accept this price, subject to final confirmation of the specif
 
 - Delivery schedule and destination
 - Payment terms
-${docs}
+- Any additional documents your registration or import requires from us
+
+${docListSell(o,c)}
 
 ${firm?'Please confirm by [date] to secure this production slot.':'We look forward to working with you on this order.'}
 
@@ -932,7 +950,7 @@ ${sign}`;
   const bench=low
     ?`Customs trade statistics (UN Comtrade) for HS ${c.hs}, which covers a range of products and grades, indicate that your requested price is on the low side of the market.`
     :`According to official customs trade statistics (UN Comtrade), the median export unit value from ${rep} for HS ${c.hs} ${span} was around ${medS} (volume-weighted average ${avgS}), ${conv}, covering all products and grades under this code. Your requested price is ${pct}% below the median.`;
-  const why=ph?`This reflects [our GMP status, e.g. EU GMP / PIC/S], full regulatory documentation ([${isCh30(c.hs)?(/^3002/.test(c.hs)?'e.g. EU marketing authorisation / US BLA':'e.g. CPP / marketing authorisation'):'DMF/CEP'}]) and a reliable supply record.`:'This reflects our product quality, complete documentation and reliable lead times.';
+  const why=ph?`This reflects [our GMP status, e.g. EU GMP certificate / MFDS GMP (PIC/S member authority)], full regulatory documentation ([${isCh30(c.hs)?(/^3002/.test(c.hs)?'e.g. EU marketing authorisation / US BLA':'e.g. CPP / marketing authorisation'):'DMF/CEP'}]) and a reliable supply record.`:'This reflects our product quality, complete documentation and reliable lead times.';
   return `Subject: Re: Price request for ${pe} (HS ${c.hs})
 
 Dear [Contact Name],
@@ -951,7 +969,7 @@ function memoText(c,o,e){
   const R=e.R,ds=dsWord(),rl=e.rel,ph=isPh(c.hs),sel=chkSel(o,c.hs),ck=PH_CHK();
   const frS=R.frm==='abs'?'$'+fP(R.fa)+'/'+c.unit:(R.fr*100).toFixed(1)+'%';
   const relKo=`- 비교 신뢰도: ${rl.label}${rl.reasons.filter(r=>r.w>0).length?' — '+rl.reasons.filter(r=>r.w>0).map(r=>r.t).join(' / '):''}`;
-  const chkKo=ph?`- 가격 외 확인 항목: ${ck.filter(x=>sel.includes(x[0])).map(x=>x[1]).join(', ')||'없음'} (견적 간 규격·GMP·등록 상태가 같은지 확인 필요)`:'';
+  const chkKo=ph?(e.buy?`- 가격 외 확인 항목: ${ck.filter(x=>sel.includes(x[0])).map(x=>x[1]).join(', ')||'없음'} (견적 간 규격·GMP·등록 상태가 같은지 확인 필요)`:`- 바이어에게 제공할 서류: ${ck.filter(x=>sel.includes(x[0])).map(x=>x[1]).join(', ')||'없음'} (바이어 등록·수입에 필요한 서류를 함께 확인)`):'';
   if(S.lang==='en')return [`[Price review] ${prodEn(c.hs)} (HS ${c.hs}) · ${e.buy?'purchase':'sale'} · reporter ${repInfo().en}${e.pc?' · counterpart '+cEn(e.pc.key,e.pc.nm):''}`,
     `- Offer: ${fmtCur(e.price,o,c)} (${o.inc}) → ${e.basis} basis $${fP(e.norm)}/${c.unit}`,
     `- Weighted market average: $${fP(c.avg)}/${c.unit} · median $${fP(c.q.p50)} (last ${c.periods.length} periods, ${ds})`,
@@ -960,7 +978,7 @@ function memoText(c,o,e){
     `- Proposed: opening ${fmtCur(toOffer(e.T.open,o,R,e.basis),o,c)} / target ${fmtCur(toOffer(e.T.goal,o,R,e.basis),o,c)} / ${e.buy?'ceiling':'floor'} ${fmtCur(toOffer(e.T.walk,o,R,e.basis),o,c)} (${o.inc})`,
     isNum(e.impact)&&e.impact>0?`- Effect at target: $${fP(e.impact)} (≈ ${fKRW(e.impact*R.fx)}, ${e.qty.toLocaleString()} ${c.unit})`:'',
     `- Comparison reliability: ${rl.label}${rl.reasons.filter(r=>r.w>0).length?' — '+rl.reasons.filter(r=>r.w>0).map(r=>r.t).join(' / '):''}`,
-    ph?`- Non-price checks: ${ck.filter(x=>sel.includes(x[0])).map(x=>x[1]).join(', ')||'none'} (confirm quotes share the same specification, GMP and registration status)`:'',
+    ph?`- ${e.buy?'Non-price checks':'Documents to provide'}: ${ck.filter(x=>sel.includes(x[0])).map(x=>x[1]).join(', ')||'none'} (${e.buy?'confirm quotes share the same specification, GMP and registration status':'confirm what the buyer\'s registration and import require'})`:'',
     `- Assumptions: USD/KRW ${R.fx.toLocaleString()}, freight ${frS}, insurance ${(R.ins*100).toFixed(2)}% on 110% cover${o.inc==='EXW'?`, origin costs ${(R.inl*100).toFixed(1)}%`:''}${/^D/.test(o.inc)?`, destination ${(R.dst*100).toFixed(1)}%`:''}${o.inc==='DDP'?`, duty ${(R.duty*100).toFixed(1)}%`:''}`].filter(Boolean).join('\n');
   return [`[단가 검토 메모] ${prodName(c.hs)} (HS ${c.hs}) · ${e.buy?'수입 매입':'수출 판매'} · 보고국 ${repInfo().ko}${e.pc?' · 상대국 '+e.pc.name:''}`,
   `- 제시가: ${fmtCur(e.price,o,c)} (${o.inc}) → ${e.basis} 기준 $${fP(e.norm)}/${c.unit}`,
@@ -1003,7 +1021,7 @@ function trBox(o,mail){if(S.trText&&S.trSrc!==mail){S.trText=null;S.trSrc=null}c
   return `<div class="trbox"><div class="row" style="gap:8px"><span class="small" style="font-weight:700">${ico('globe',16)} ${T('현지어 병기 (선택)','Add the local language (optional)')}</span>
     <label class="sr" for="tr-lang">${T('언어','Language')}</label><select id="tr-lang" class="select" style="width:auto;min-height:38px"><option value="">${T('언어 선택','Choose a language')}</option>${LANGS().map(([k,n,en])=>`<option value="${k}" ${def===k?'selected':''}>${n} · ${S.lang==='en'?en:n}</option>`).join('')}</select>
     ${S.ai?`<button type="button" class="btn btn-sm" data-tr>${T('AI로 번역','Translate with AI')}</button>`:''}</div>
-    <p class="hint" style="margin-top:6px">${S.ai?T('영문을 원본으로 두고, 현지어를 아래에 함께 붙이는 방식을 권합니다. 가격·조건·서류명은 영문이 기준입니다.','Keep the English as the reference and add the local language below it. Prices, terms and document names follow the English.'):T('번역은 AI가 연결된 화면(claude.ai 또는 API 키를 넣은 배포 버전)에서 쓸 수 있습니다. 제약 무역은 영문만으로도 충분한 경우가 대부분입니다.','Translation needs AI (claude.ai or a deployment with an API key). English alone is usually enough in pharma trade.')}</p>
+    <p class="hint" style="margin-top:6px">${S.ai?T('영문을 원본으로 두고, 현지어를 아래에 함께 붙이는 방식을 권합니다. 가격·조건·서류명은 영문이 기준입니다.','Keep the English as the reference and add the local language below it. Prices, terms and document names follow the English.'):T('번역은 AI가 연결된 화면(claude.ai 또는 AI 기능을 켠 배포 사이트)에서 쓸 수 있습니다. 제약 무역은 영문만으로도 충분한 경우가 대부분입니다.','Translation needs AI (claude.ai or a deployment with an API key). English alone is usually enough in pharma trade.')}</p>
     <p class="hint" id="tr-status" aria-live="polite"></p>
     <div id="tr-wrap" ${S.trText?'':'hidden'}><textarea id="mail-local" class="mail" style="min-height:220px" aria-label="${T('현지어 메일','Local-language email')}">${esc(S.trText||'')}</textarea>
       <div class="row" style="margin-top:8px;gap:8px"><button type="button" class="btn btn-sm" data-copy="mail-local">${ico('copy',16)}${T('현지어만 복사','Copy local only')}</button><button type="button" class="btn btn-sm" data-copyboth>${ico('copy',16)}${T('영문 + 현지어 함께 복사','Copy English + local')}</button></div></div></div>`}
@@ -1086,10 +1104,10 @@ function heroResult(){
 }
 const TOUR=()=>[
  ['copilot','deal',T('협상 코파일럿','Negotiation copilot'),T('상대가 부른 가격이 시장에서 어디쯤인지 판정하고, 무엇을 얼마에 다시 제안할지까지 정리해 주는 핵심 화면입니다.','Judges where a quoted price sits in the market and tells you what to counter-offer.'),
-   [T('사는 입장(수입)과 파는 입장(수출) 중 고르고, 상대 국가와 제시 단가를 입력합니다.','Choose buying or selling, then enter the counterpart country and the quoted price.'),T('통화(USD·EUR·KRW), 단위(kg·g·개), 인코텀즈 2020 11개 조건(EXW~DDP)을 통계 기준으로 자동 환산하고 그 과정을 단계별로 보여줍니다.','Currency, unit and Incoterm are converted to the statistics basis, step by step.'),T('판정 5단계, 1차 제시가·목표가·마지노선, 수량 기준 절감액, 협상 근거, 영문 회신 메일, 내부 보고 메모를 한 번에 만듭니다. AI로 메일 어조를 다듬을 수 있습니다.','You get a 5-level verdict, opening/target/walk-away prices, savings, talking points, an English reply email and an internal memo. AI can polish the email tone.')],
+   [T('사는 입장(수입)과 파는 입장(수출) 중 고르고, 상대 국가와 제시 단가를 입력합니다.','Choose buying or selling, then enter the counterpart country and the quoted price.'),T('통화(USD·EUR·KRW 등 8종), 단위(kg·g·개·도즈), 인코텀즈 2020 11개 조건(EXW~DDP)을 통계 기준으로 자동 환산하고 그 과정을 단계별로 보여줍니다.','Currency, unit and Incoterm are converted to the statistics basis, step by step.'),T('판정 5단계, 1차 제시가·목표가·상한선(파는 입장은 하한선), 수량 기준 절감액, 협상 근거, 영문 회신 메일, 내부 보고 메모를 한 번에 만듭니다. AI로 메일 어조를 다듬을 수 있습니다.','You get a 5-level verdict, opening/target/walk-away prices, savings, talking points, an English reply email and an internal memo. AI can polish the email tone.')],
    [T('공급사 견적 메일을 받고 회신하기 전','Before replying to a supplier quote'),T('바이어가 가격 인하를 요구해 왔을 때','When a buyer asks for a discount'),T('팀장에게 단가 수용 여부를 보고할 때','When reporting a price decision to your manager')]],
- ['search','search',T('품목·국가 검색','Product & country search'),T('HS 코드나 품목명으로 아무 품목이나 찾고, 200여 개 보고국 중 하나를 골라 그 나라의 수출입 통계로 분석합니다.','Search any product by HS code or name and pick any of 200+ reporting countries.'),
-   [T('"항생제", "화장품", "리튬이온", "2941", "vaccine"처럼 한글·영문·코드로 검색합니다.','Search in Korean, English or by code: "antibiotics", "cosmetics", "2941".'),T('2·4·6자리 HS 코드를 모두 지원하며 6자리가 가장 정확합니다.','2-, 4- and 6-digit HS codes are supported; 6 digits is the most precise.'),T('보고국을 바꾸면 그 나라 기준 수입·수출 단가를 봅니다. 예: 베트남의 의약품 수입 단가.','Change the reporter to see that country\'s import and export prices, e.g. Vietnam\'s medicine imports.')],
+ ['search','search',T('품목·국가 검색','Product & country search'),T('의약품·원료 품목을 성분명, 품목명, HS 코드로 찾고, 200여 개 보고국 중 하나를 골라 그 나라의 수출입 통계로 분석합니다.','Find medicines and APIs by ingredient, product name or HS code, and pick any of 200+ reporting countries.'),
+   [T('"항생제", "파라세타몰", "바이오시밀러", "2941", "vaccine"처럼 한글·영문·코드로 검색합니다.','Search in Korean, English or by code: "antibiotics", "paracetamol", "2941".'),T('2·4·6자리 HS 코드를 모두 지원하며 6자리가 가장 정확합니다.','2-, 4- and 6-digit HS codes are supported; 6 digits is the most precise.'),T('보고국을 바꾸면 그 나라 기준 수입·수출 단가를 봅니다. 예: 베트남의 의약품 수입 단가.','Change the reporter to see that country\'s import and export prices, e.g. Vietnam\'s medicine imports.')],
    [T('수출 대상국의 수입 단가를 미리 볼 때','To see import prices in a target market'),T('새 품목의 시장 규모를 확인할 때','To size a new product\'s market')]],
  ['quotes','quotes',T('견적 비교','Quote comparison'),T('여러 공급사(또는 바이어)에게서 받은 견적을 조건이 달라도 같은 기준으로 바꿔 한 표에서 비교합니다.','Compares quotes with different terms on one basis.'),
    [T('공급사 이름, 국가, 가격, 통화, 단위, 인코텀즈를 줄마다 입력합니다.','Enter supplier, country, price, currency, unit and Incoterm per row.'),T('모든 견적을 통계 기준 단가로 환산해 순위를 매기고 가장 좋은 견적을 표시합니다.','All quotes are converted and ranked; the best is highlighted.'),T('마음에 드는 견적은 버튼 하나로 협상 코파일럿에 넘깁니다.','Send any quote to the copilot with one click.')],
@@ -1103,6 +1121,12 @@ const TOUR=()=>[
  ['routes','route',T('교역 루트맵','Trade route map'),T('세계 지도 위에서 어느 나라와 얼마에 거래하는지 선으로 보여줍니다.','Shows trade routes and prices on a world map.'),
    [T('선 굵기는 물량, 색은 시장 평균 대비 단가입니다.','Line width is volume; color is price versus average.'),T('국가를 누르면 상세가 나오고 바로 협상 점검으로 이어집니다.','Click a country for details and to start a check.')],
    [T('발표 자료에 시장 구조를 보여줄 때','For presentations'),T('소싱 다변화 후보를 고를 때','To shortlist alternative sources')]],
+ ['rivals','users',T('경쟁사·제조소','Competitors & manufacturers'),T('성분을 고르면 식약처 완제의약품 허가 4만여 건과 원료의약품 등록(DMF) 9,000여 건으로 경쟁사별 품목 점유율, 제품 구성, 원료 출처, 원료 조달 단가 추정, 차별화 포인트를 보여줍니다.','Pick an ingredient to see competitors\' product share, product mix, API sources, estimated API cost and differentiation ideas from 40,000+ MFDS product permits and 9,000+ DMF records.'),
+   [T('위쪽에서 고른 품목(HS)과 연결된 성분이 자동으로 골라지고, 한글 성분명으로 직접 검색할 수도 있습니다.','Ingredients linked to the selected HS code are picked automatically, or search by Korean name.'),T('국내 업체 순위, 제조국별 PIC/S·WHO 평가와 수입 단가, 여러 업체가 함께 쓰는 제조소를 한 화면에 보여줍니다.','Shows company ranking, PIC/S/WHO status and prices by country, and sites shared by several companies.')],
+   [T('경쟁사가 어디서 원료를 들여오는지 볼 때','To see where competitors source an API'),T('대체 제조소 후보를 찾을 때','To shortlist alternative manufacturers')]],
+ ['regs','shield',T('국가별 규제','Regulators by country'),T('세계 120여 개국의 의약품 규제기관, PIC/S 가입, WHO 평가(WLA·성숙도)를 거래국 단가와 함께 보여줍니다.','Regulators, PIC/S membership and WHO status for 120+ countries, alongside partner prices.'),
+   [T('위쪽 표는 현재 품목의 거래국, 아래 표는 전체 국가입니다. 국가·규제기관 이름으로 검색하고 PIC/S·WHO 기준으로 걸러 볼 수 있습니다.','The top table lists partners for the current product; the bottom one all countries, searchable and filterable.'),T('물량 중 PIC/S 회원국과 WHO 인정 국가 비중을 자동으로 계산합니다.','Computes the share of volume from PIC/S members and WHO-recognised countries.')],
+   [T('공급국의 GMP 신뢰도를 가늠할 때','To gauge a supplier country\'s GMP oversight'),T('수출 대상국의 규제 환경을 미리 볼 때','To preview a target market\'s regulator')]],
  ['data','data',T('데이터 관리','Data'),T('실시간 UN Comtrade, 직접 올린 CSV, 예시 데이터 중 무엇으로 계산할지 고릅니다.','Choose live UN Comtrade data, your own CSV, or sample data.'),
    [T('배포 버전에서는 UN Comtrade에서 실시간으로 불러와 24시간 동안 저장해 둡니다.','The deployed version loads UN Comtrade live and caches for 24 hours.'),T('관세청·Comtrade CSV를 올리면 열 이름과 금액 단위(천불 등)를 자동으로 찾습니다.','CSV uploads detect columns and value units automatically.'),T('지금 분석 중인 데이터를 CSV로 내려받을 수 있습니다.','Download the current dataset as CSV.')],
    [T('실제 협상에 쓰기 전','Before real negotiations'),T('회사 담당 품목으로 좁혀 분석할 때','To focus on your own products')]]
@@ -1127,7 +1151,7 @@ function introHTML(){
   const prods=SAMPLE_CODES;if(!prods.includes(S.heroHs))S.heroHs=prods[0];
   const {c}=heroEval();
   const tick=prods.map(hs=>{const saveM=S.measure;S.measure='kg';const k=ctx('M',12,S.sample.recs.filter(r=>r.hs===hs));S.measure=saveM;return `<span class="it"><span class="muted mono">HS ${hs}</span><b>${esc(prodName(hs))}</b><span class="mono">${fUSD(k.avg)}</span><span class="mono" style="color:var(--${!isNum(k.chg)?'muted':k.chg>0?'bad':'good'})">${fPct(k.chg)}</span></span>`}).join('');
-  const liveLine=S.api?T('UN Comtrade 실시간 데이터에 연결되어 있습니다.','Connected to live UN Comtrade data.'):T('이 미리보기에서는 예시 데이터로 동작합니다. 배포 버전에서는 UN Comtrade 실시간 데이터로 계산합니다.','This preview runs on sample data. The deployed version computes from live UN Comtrade data.');
+  const liveLine=S.api?T('UN Comtrade 실시간 데이터에 연결되어 있습니다.','Connected to live UN Comtrade data.'):T('이 미리보기에서는 예시 데이터로 동작합니다. 배포 버전에서는 UN Comtrade에서 바로 받은 최신 공개 자료로 계산합니다(각국 보고까지 수개월 걸림).','This preview runs on sample data. The deployed version computes from live UN Comtrade data.');
   return `<header class="top"><div class="wrap">
     <button class="logo" data-go="intro" aria-label="PharmaPrice Lens">${LOGO}PharmaPrice Lens <span class="beta">BETA</span></button>
     <nav class="topnav" aria-label="${T('소개 메뉴','Sections')}"><a href="#why">${T('왜 필요한가','Why')}</a><a href="#tour">${T('화면 안내','Screens')}</a><a href="#example">${T('사용 예시','Example')}</a><a href="#data">${T('데이터','Data')}</a><a href="#glossary">${T('용어','Glossary')}</a><a href="#faq">FAQ</a></nav>
@@ -1137,12 +1161,13 @@ function introHTML(){
   <main>
   <section class="hero"><div class="wrap hero-grid">
     <div>
-      <div class="eyebrow">${T('의약품·모든 HS 품목 수출입 단가 협상 코파일럿','Import/export price negotiation copilot for any HS product')}</div>
+      <div class="eyebrow">${T('의약품·원료 수출입 단가 협상 대시보드','Pharma & API import/export price negotiation dashboard')}</div>
       <h1 style="margin-top:16px">${T('이 가격,<br><span class="mark">받아들여도</span> 될까요?','Should you<br><span class="mark">accept</span> this price?')}</h1>
       <p class="lead">${T('PharmaPrice Lens는 상대가 부른 단가를 UN Comtrade 공식 무역통계와 비교해 주는 협상 도구입니다. 품목을 검색하고 나라를 고르면 시장 단가 분포에서 제시가의 위치를 판정하고, 다시 제안할 가격과 근거, 영문 회신 메일까지 만들어 드립니다.','PharmaPrice Lens compares a quoted unit price with official UN Comtrade trade statistics. Search a product, choose a country, and get a verdict, a counter-offer with evidence, and an English reply email.')}</p>
       <ul class="checks">
-        <li><span class="ck">${ico('check',14)}</span><span>${T('HS 코드 6,900여 개를 한글·영문·코드로 검색, 200여 개 보고국 선택','Search ~6,900 HS codes in Korean, English or by code; 200+ reporting countries')}</span></li>
+        <li><span class="ck">${ico('check',14)}</span><span>${T('의약품·원료 HS 6자리 소호 470여 개(류·호 포함 520여 개: 29·30류, 생약 추출물, 효소, 진단시약)를 성분명·한글·영문·코드로 검색, 200여 개 보고국 선택','Search 470+ six-digit pharma HS subheadings (520+ with chapters and headings: 29–30, plant extracts, enzymes, diagnostic reagents) by ingredient, name or code; 200+ reporters')}</span></li>
         <li><span class="ck">${ico('check',14)}</span><span>${T('인코텀즈 2020 11개 조건, USD·EUR·KRW, kg·g·개·도즈 단위를 통계 기준으로 자동 환산','Auto-converts Incoterms, currencies and units to the statistics basis')}</span></li>
+        <li><span class="ck">${ico('check',14)}</span><span>${T('식약처 DMF 등록 9,000여 건으로 원료별 국내 등록 업체(경쟁사)·해외 제조소 확인, 120여 개국 규제기관·PIC/S·WHO 평가까지','Korean registrants (competitors) and manufacturing sites per API from 9,000+ MFDS DMF records, plus regulators, PIC/S and WHO status for 120+ countries')}</span></li>
         <li><span class="ck">${ico('check',14)}</span><span>${T('영문 회신 메일을 AI로 다듬고, 숫자가 바뀌지 않았는지 자동 점검','AI email polishing with an automatic check that numbers did not change')}</span></li>
       </ul>
       <p class="hint" style="margin-top:18px">${liveLine}</p>
@@ -1150,14 +1175,14 @@ function introHTML(){
     <div class="try" aria-labelledby="try-h">
       <div class="row" style="justify-content:space-between"><h2 id="try-h" style="font-size:19px;font-weight:800;letter-spacing:-.01em">${T('로그인 없이 체험하기','Try it without logging in')}</h2><span class="tag t-neutral">${T('예시 데이터','Sample data')}</span></div>
       <div class="seg" role="group" aria-label="${T('거래 유형','Role')}" style="margin-top:14px">
-        <button type="button" data-hrole="buy" aria-pressed="${S.heroRole==='buy'}">${T('사오는 입장 (수입)','Buying (import)')}</button>
+        <button type="button" data-hrole="buy" aria-pressed="${S.heroRole==='buy'}">${T('사는 입장 (수입)','Buying (import)')}</button>
         <button type="button" data-hrole="sell" aria-pressed="${S.heroRole==='sell'}">${T('파는 입장 (수출)','Selling (export)')}</button>
       </div>
       <div class="chips" role="group" aria-label="${T('품목','Product')}" style="margin-top:12px">${prods.map(hs=>`<button type="button" class="chipbtn" data-hhs="${hs}" aria-pressed="${S.heroHs===hs}">${hs} ${esc(prodName(hs))}</button>`).join('')}</div>
       <div class="field" style="margin-top:16px"><label for="hero-price">${S.heroRole==='buy'?T('공급사','Supplier'):T('바이어','Buyer')} ${T('제시 단가','price')} (USD/kg, ${c.basis})</label>
         <div class="row" style="gap:8px;flex-wrap:nowrap"><input id="hero-price" class="input big" inputmode="decimal" autocomplete="off" placeholder="${isNum(c.q.p50)?fP(c.q.p50):''}" value="${esc(S.heroPrice)}"><button type="button" class="btn" data-hfill style="min-height:62px">${T('중앙값 넣기','Use median')}</button></div></div>
       <div id="hero-res" style="margin-top:14px" aria-live="polite">${heroResult()}</div>
-      <button type="button" class="btn btn-primary btn-lg" data-go="login" style="width:100%;margin-top:16px">${T('목표가·협상 근거·영문 메일 받기','Get target price, evidence and email')} ${ico('arrow',18)}</button>
+      <button type="button" class="btn btn-primary btn-lg" data-go="login" style="width:100%;margin-top:16px">${T('로그인하고 목표가·영문 메일 받기','Log in for target price and email')} ${ico('arrow',18)}</button>
     </div>
   </div></section>
   <div class="ticker" aria-label="${T('예시 품목 평균 수입 단가','Sample average import prices')}"><div class="wrap"><span class="small" style="font-weight:700;color:var(--ink-2)">${T('예시 데이터 · 한국 수입 평균 단가 · 최근 12개월','Sample data · Korea average import price · last 12 months')}</span>${tick}</div></div>
@@ -1195,7 +1220,7 @@ function introHTML(){
     <div>
       <div class="eyebrow">${T('데이터와 계산','Data and method')}</div>
       <h2 style="margin-top:10px">${T('숫자는 공식 통계에서,<br>문장은 정해진 규칙에서','Numbers from official statistics,<br>words from fixed rules')}</h2>
-      <p class="sub">${T('UN Comtrade는 각국 세관이 보고한 품목별·상대국별 수출입 금액과 중량을 모은 유엔 공식 데이터베이스입니다. 단가는 신고 금액을 중량(또는 수량)으로 나눈 값이며, 국가·월별 단가를 물량으로 가중해 계산하므로 소량 거래 한 건이 평균을 흔들지 않습니다. 협상 문구와 메일은 계산 결과에 따라 정해진 규칙으로 만들고, AI는 원하는 경우에만 문장을 다듬습니다.','UN Comtrade is the UN\'s official database of trade values and weights reported by customs authorities. Unit price is declared value divided by weight (or quantity), weighted by volume so one small shipment cannot skew the average. Talking points and emails follow fixed rules; AI only rewords on request.')}</p>
+      <p class="sub">${T('UN Comtrade는 각국 통계당국이 (주로 세관 자료로) 보고한 품목별·상대국별 수출입 금액과 중량을 모은 유엔 공식 데이터베이스입니다. 단가는 신고 금액을 중량(또는 수량)으로 나눈 값이며, 국가·월별 단가를 물량으로 가중해 계산하므로 소량 거래 한 건이 평균을 흔들지 않습니다. 협상 문구와 메일은 계산 결과에 따라 정해진 규칙으로 만들고, AI는 원하는 경우에만 문장을 다듬습니다.','UN Comtrade is the UN\'s official database of trade values and weights reported by customs authorities. Unit price is declared value divided by weight (or quantity), weighted by volume so one small shipment cannot skew the average. Talking points and emails follow fixed rules; AI only rewords on request.')}</p>
       <div class="row" style="margin-top:20px"><span class="tag t-neutral">UN Comtrade</span><span class="tag t-neutral">${T('관세청 수출입무역통계','Korea Customs statistics')}</span><span class="tag t-neutral">${T('CSV 직접 업로드','CSV upload')}</span></div>
     </div>
     <div class="formula" aria-label="${T('계산식','Formulas')}">
@@ -1239,7 +1264,7 @@ function introHTML(){
   </main>
   <footer class="ft"><div class="wrap row" style="justify-content:space-between"><span>PharmaPrice Lens · KITA ${T('무역 AX마스터 프로젝트','Trade AX Master project')}</span><span>${T('데이터: UN Comtrade, 관세청 · 소개 화면 수치는 예시 데이터','Data: UN Comtrade, Korea Customs · figures on this page are sample data')}</span></div></footer>`;
 }
-const glossary=()=>[['HS',T('HS 코드','HS code'),T('국제 공통 품목 분류 번호입니다. 2자리 류, 4자리 호, 6자리 소호로 세분하며 6자리까지 전 세계가 같습니다. 원료의약품은 주로 29류, 완제·바이오의약품은 30류입니다.','The international product classification: 2-digit chapter, 4-digit heading, 6-digit subheading, identical worldwide to 6 digits. APIs are mostly in chapter 29, finished and biological medicines in chapter 30.')],
+const glossary=()=>[['HS',T('HS 코드','HS code'),T('국제 공통 품목 분류 번호입니다. 2자리 류, 4자리 호, 6자리 소호로 세분하며 6자리까지 전 세계가 같습니다. 원료의약품은 주로 29류, 완제·바이오의약품은 30류입니다. 단, 항체 원액 같은 바이오 원료는 3002.13·14, 헤파린 등은 3001에 분류됩니다.','The international product classification: 2-digit chapter, 4-digit heading, 6-digit subheading, identical worldwide to 6 digits. APIs are mostly in chapter 29, finished and biological medicines in chapter 30.')],
   ['EXW',T('공장인도','Ex works'),T('판매자 공장에서 넘깁니다. 수출 통관과 운송비 전부를 사는 쪽이 부담합니다. 항공 운송 의약품은 수출지 비용이 기본값 0.5%보다 클 수 있으니 실제 견적으로 바꾸세요.','Handed over at the seller\'s premises; the buyer handles export clearance and all transport. Origin costs for air-freighted medicines can be well above the 0.5% default, so use real quotes.')],
   ['FCA',T('운송인인도','Free carrier'),T('지정 장소에서 사는 쪽이 지정한 운송인에게 넘깁니다. 항공·컨테이너 운송의 표준 조건이며 이 도구는 FOB와 같게 봅니다.','Delivered to the buyer\'s carrier at a named place. Standard for air and container shipments; treated like FOB here.')],
   ['FAS',T('선측인도','Free alongside ship'),T('수출항 본선 옆까지 넘깁니다. 해상 전용이며 이 도구는 FOB와 같게 봅니다.','Alongside the vessel at the port of shipment; sea only, treated like FOB here.')],
@@ -1253,7 +1278,9 @@ const glossary=()=>[['HS',T('HS 코드','HS code'),T('국제 공통 품목 분�
   ['DDP',T('관세지급인도','Delivered duty paid'),T('수입 통관과 관세까지 판매자가 부담합니다. 이 도구는 DAP에 CIF 과세가격 × 관세율을 더하고 부가세는 뺍니다.','Seller also clears imports and pays duty. Treated as DAP plus duty % of the CIF value, excluding VAT.')],
   ['API',T('원료의약품','Active pharmaceutical ingredient'),T('약효를 내는 원료 물질입니다. 대부분 29류(유기화학품)에 분류되며 등급·순도·제조소 인증에 따라 값 차이가 큽니다.','The active substance. Mostly classified in chapter 29; price varies widely with grade, purity and site approval.')],
   ['GMP',T('의약품 제조품질관리기준','Good Manufacturing Practice'),T('의약품 제조소가 지켜야 하는 품질 기준입니다. 어느 당국의 GMP 근거가 있는지(EU·PIC/S 회원 당국 인증서, 미국 FDA 실사 결과, WHO 사전적격성평가, 식약처)에 따라 공급할 수 있는 시장이 달라집니다.','Quality rules for manufacturing sites. Which authority\'s GMP evidence a site holds (EU or PIC/S-member certificate, FDA inspection status, WHO PQ, MFDS) decides which markets it can serve.')],
-  ['DMF',T('원료의약품 등록 서류','Drug master file / CEP'),T('원료 제조 정보를 규제기관에 등록한 서류입니다. 유럽은 CEP, 한국은 KDMF를 씁니다. 공급처를 바꾸면 허가 변경이 필요해 보통 수개월이 걸립니다.','Regulatory file on API manufacture (CEP in Europe, KDMF in Korea). Changing source needs a variation that usually takes months.')],
+  ['PIC/S',T('의약품실사상호협력기구','Pharmaceutical Inspection Co-operation Scheme'),T('각국 GMP 실사 당국이 실사 기준을 맞추는 국제 협력기구입니다. 한국은 2014년에 가입했습니다. 회원국 실사는 서로 신뢰도가 높은 편이지만, 가입이 곧 자동 상호인정을 뜻하지는 않습니다.','International co-operation of GMP inspectorates (Korea joined in 2014). Membership signals harmonised inspections but is not automatic mutual recognition.')],
+  ['WLA',T('WHO 공인 규제기관','WHO-Listed Authority'),T('WHO가 국제 기준을 충족한다고 공인한 규제기관입니다. 성숙도 평가(ML3·ML4)와 함께 그 나라 규제 체계를 가늠하는 지표로 씁니다.','A regulator recognised by WHO as meeting international standards; used with maturity levels (ML3/ML4) to gauge a regulatory system.')],
+  ['DMF',T('원료의약품 등록 자료','DMF / ASMF / CEP'),T('원료의 제조·품질 정보를 규제기관에 제출하는 자료입니다. 미국은 DMF, 유럽은 ASMF 또는 EDQM의 CEP(적합성 인증서), 한국은 식약처 원료의약품 등록(DMF)을 씁니다. 공급처를 바꾸면 허가 변경이 필요해 보통 6~18개월이 걸립니다.','API manufacturing and quality data filed with regulators: a DMF in the US, an ASMF or an EDQM CEP in Europe, an MFDS DMF registration in Korea. Changing source needs a variation, usually 6–18 months.')],
   ['CoA',T('시험성적서','Certificate of analysis'),T('배치별 규격 시험 결과입니다. 견적을 비교할 때는 같은 규격(약전)의 CoA인지 확인합니다.','Batch test results against the specification. Make sure quotes refer to the same pharmacopoeia.')],
   ['TP',T('이전가격','Transfer price'),T('같은 기업 집단 안의 본사-지사 거래 가격입니다. 의약품 수입 통계에 많이 섞여 있어 독립 거래가와 다를 수 있습니다.','Price between related companies. Common in medicine imports; can differ from arm\'s-length prices.')],
   ['AVG',T('가중평균 단가','Weighted average'),T('금액 합을 중량 합으로 나눈 값으로, 물량이 큰 거래가 더 크게 반영됩니다.','Total value divided by total weight; large shipments count more.')],
@@ -1264,10 +1291,10 @@ const glossary=()=>[['HS',T('HS 코드','HS code'),T('국제 공통 품목 분�
   ['CV',T('변동계수','Coefficient of variation'),T('표준편차 ÷ 평균입니다. 12%를 넘으면 가격이 크게 출렁이는 편입니다.','Standard deviation ÷ mean. Above 12% means volatile prices.')],
   ['UNC','UN Comtrade',T('각국이 유엔에 보고한 공식 무역통계 데이터베이스입니다. 보고국과 상대국이 집계한 값이 서로 다를 수 있습니다.','The UN database of official trade statistics. Reporter and partner figures can differ.')]];
 const faq=()=>[[T('표시되는 단가는 실제 계약 가격인가요?','Is the unit price a contract price?'),T('아닙니다. 세관 신고 금액을 중량(또는 수량)으로 나눈 평균 단가입니다. 실제 계약가는 수량, 인코텀즈, 품질 등급, 결제 조건에 따라 달라지므로 협상의 기준점으로 쓰세요.','No. It is declared value divided by weight (or quantity). Contract prices depend on volume, terms, grade and payment, so use it as a benchmark.')],
-  [T('어떤 품목과 나라를 볼 수 있나요?','Which products and countries?'),T('HS 2022 기준 6,900여 개 코드 전부와, UN Comtrade에 자료를 보고하는 200여 개 나라를 고를 수 있습니다. 품목명이 한글로 등록되지 않은 코드는 영문 공식 명칭으로 보여줍니다.','All ~6,900 HS 2022 codes and the 200+ countries reporting to UN Comtrade. Codes without a Korean name show the official English name.')],
+  [T('어떤 품목과 나라를 볼 수 있나요?','Which products and countries?'),T('의약품과 그 원료에 해당하는 HS 2022 6자리 소호 470여 개(류·호 포함 520여 개, 29류 유기화학품·원료의약품, 30류 의약품, 1302 생약 추출물, 3507 효소, 3822 진단시약)와, UN Comtrade에 자료를 보고하는 200여 개 나라를 고를 수 있습니다. 화장품·기계류 등 의약품이 아닌 품목은 다루지 않습니다. 품목명이 한글로 등록되지 않은 코드는 영문 공식 명칭으로 보여줍니다.','About 470 six-digit HS 2022 subheadings (520+ with chapters and headings) for medicines and their raw materials (chapter 29 APIs, chapter 30 medicines, 1302 plant extracts, 3507 enzymes, 3822 diagnostic reagents) and the 200+ countries reporting to UN Comtrade. Non-pharma goods such as cosmetics or machinery are out of scope. Codes without a Korean name show the official English name.')],
   [T('지금 화면의 숫자는 진짜인가요?','Are these numbers real?'),T('배포 버전에서는 UN Comtrade에서 실시간으로 불러온 공식 통계입니다. claude.ai 미리보기에서는 보안 정책 때문에 외부 데이터에 접속할 수 없어 예시 데이터나 직접 올린 CSV로 계산합니다. 화면 오른쪽 위 표시로 어떤 데이터인지 항상 확인할 수 있습니다.','On the deployed site, yes: live UN Comtrade statistics. In the claude.ai preview, outside data is blocked, so it uses sample data or your CSV. The badge at the top right always shows which.')],
   [T('데이터는 얼마나 최신인가요?','How current is the data?'),T('나라마다 다릅니다. 한국은 월간 자료가 두세 달 뒤에 올라오는 편이고, 월간 자료가 없는 나라는 연간 자료로 자동 전환합니다.','It varies. Korea\'s monthly data usually appears within two or three months; countries without monthly data switch to annual automatically.')],
-  [T('kg당 단가가 의미 없는 품목은요?','What if price per kg is meaningless?'),T('스마트폰이나 자동차처럼 개수 단위가 더 맞는 품목은 UN Comtrade의 보조 수량 단위(개 등)로 단가를 계산합니다. 상단에서 kg과 수량 단위를 바꿀 수 있습니다.','For items like phones or cars, unit price is computed per supplementary unit (e.g. items). Switch between kg and units at the top.')],
+  [T('kg당 단가가 의미 없는 품목은요?','What if price per kg is meaningless?'),T('완제의약품이나 백신처럼 kg보다 개수·도즈가 맞는 품목은 UN Comtrade의 보조 수량 단위가 있으면 그 단위로 단가를 계산하고, 협상 코파일럿에서는 판매단위(도즈·팩)로 환산할 수 있습니다. 상단에서 kg과 수량 단위를 바꿀 수 있습니다.','For finished medicines or vaccines, unit price uses the supplementary quantity unit when reported, and the copilot converts to sales units (doses or packs). Switch between kg and units at the top.')],
   [T('의약품도 정확히 비교되나요?','Does it work for medicines?'),T('원료의약품(29류)은 6자리 코드 안에서도 성분·등급이 섞이고, 완제·바이오의약품(30류)은 kg당 단가에 제품·함량·포장 차이가 섞입니다. 그래서 화면마다 비교 신뢰도(높음·보통·낮음)와 그 사유를 보여주고, 30류는 kg당 도즈·팩 수를 넣어 도즈당 가격으로도 비교할 수 있게 했습니다. 등급, GMP, DMF·CEP, 유효기간, 콜드체인은 가격 외 확인 항목으로 따로 챙깁니다.','APIs (chapter 29) pool different substances and grades even at 6 digits, and per-kg values for finished and biological medicines (chapter 30) mix products, strengths and packaging. So every view shows a reliability level with reasons, chapter 30 supports per-dose comparison, and grade, GMP, DMF/CEP, shelf life and cold chain are tracked as non-price checks.')],
   [T('AI가 숫자를 만들어 내지는 않나요?','Does AI invent numbers?'),T('숫자는 모두 통계에서 계산합니다. AI는 원할 때 메일 문장만 다듬고, 다듬은 결과의 숫자가 원문과 다르면 경고합니다.','All numbers come from statistics. AI only rewords the email on request, and the app warns if any number changed.')]];
 
@@ -1290,7 +1317,7 @@ function loginHTML(){
 }
 
 /* ================= app shell ================= */
-const VIEWS=()=>[['dash',T('대시보드','Dashboard'),'dash'],['countries',T('국가별 단가','Countries'),'flag'],['trend',T('추이 분석','Trends'),'trend'],['routes',T('교역 루트맵','Route map'),'route'],['_',T('협상 도구','Negotiation')],['copilot',T('협상 코파일럿','Copilot'),'deal'],['quotes',T('견적 비교','Quotes'),'quotes'],['margin',T('수출 마진 계산기','Export margin'),'calc'],['history',T('협상 기록','History'),'hist'],['_',T('데이터','Data')],['data',T('데이터 관리','Data sources'),'data'],['method',T('계산 방법·용어','Method & terms'),'book']];
+const VIEWS=()=>[['dash',T('대시보드','Dashboard'),'dash'],['countries',T('국가별 단가','Countries'),'flag'],['trend',T('추이 분석','Trends'),'trend'],['routes',T('교역 루트맵','Route map'),'route'],['_',T('협상 도구','Negotiation')],['copilot',T('협상 코파일럿','Copilot'),'deal'],['quotes',T('견적 비교','Quotes'),'quotes'],['margin',T('수출 마진 계산기','Export margin'),'calc'],['history',T('협상 기록','History'),'hist'],['_',T('업계 정보','Industry')],['rivals',T('경쟁사·제조소','Competitors'),'users'],['regs',T('국가별 규제','Regulators'),'shield'],['_',T('데이터','Data')],['data',T('데이터 관리','Data sources'),'data'],['method',T('계산 방법·용어','Method & terms'),'book']];
 const FAV=[410,156,392,842,704,276,699,764,360,458,608,826,251,380,724,528,56,757,372,76,484,792,682,784,36,124,643,490];
 function reporterSelect(){
   const favs=FAV.map(c=>REF.byCode[c]).filter(Boolean),favSet=new Set(FAV);
@@ -1302,16 +1329,16 @@ function reporterSelect(){
 function productPicker(){
   const h=hsInfo(S.hs);
   if(!S.pOpen)return `<div class="psearch"><button type="button" class="psel" data-popen aria-label="${T('품목 바꾸기','Change product')}" title="${esc(h?h.en:'')}">${ico('search',16)}<span class="code">HS ${S.hs}</span><span class="nm">${esc(prodName(S.hs))}</span></button></div>`;
-  const sugg=['294190','300490','300215','300241','293629','330499','854232','850760','870380','851713'].filter(c=>REF.hsMap[c]).map(c=>REF.hsMap[c]);
+  const sugg=['2941','294190','292429','294110','293627','300490','300215','300241','300290','3822'].filter(c=>REF.hsMap[c]).map(c=>REF.hsMap[c]);
   const res=S.pq.trim()?hsSearch(S.pq):sugg;
   const row=(x,i)=>{const kc=hsKoCtx(x.code);return `<button type="button" role="option" data-pick="${x.code}" class="${i===S.pAct?'act':''}" aria-selected="${i===S.pAct}"><span><span class="code">${x.code}</span><span class="lv">${x.lvl===2?T('류','chapter'):x.lvl===4?T('호','heading'):T('소호','subheading')}</span></span><span>${S.lang==='ko'?`<span class="ko">${esc(x.ko||(kc?kc.ko+' 중':''))}</span>`:''}<span class="en">${esc(x.en)}</span></span></button>`};
-  return `<div class="psearch"><span class="ic">${ico('search',18)}</span><label class="sr" for="p-q">${T('품목 검색','Search products')}</label><input id="p-q" class="input" autocomplete="off" placeholder="${T('품목명·HS 코드 (예: 항생제, 화장품, 2941, vaccine)','Name or HS code (e.g. antibiotics, 2941)')}" value="${esc(S.pq)}" role="combobox" aria-expanded="true" aria-controls="p-list">
-    <div class="pdrop" id="p-list" role="listbox">${!S.pq.trim()?`<div class="none">${T('자주 찾는 품목 · 6자리 코드가 가장 정확합니다','Popular products · 6-digit codes are most precise')}</div>`:''}${res.length?res.map(row).join(''):`<div class="none">${T('검색 결과가 없습니다. HS 코드 숫자나 영문 품명으로도 찾아보세요.','No results. Try an HS code or English name.')}</div>`}</div></div>`;
+  return `<div class="psearch"><span class="ic">${ico('search',18)}</span><label class="sr" for="p-q">${T('품목 검색','Search products')}</label><input id="p-q" class="input" autocomplete="off" placeholder="${T('성분·품목명·HS 코드 (예: 항생제, 파라세타몰, 2941, vaccine)','Ingredient, product or HS code (e.g. antibiotics, paracetamol, 2941)')}" value="${esc(S.pq)}" role="combobox" aria-expanded="true" aria-controls="p-list">
+    <div class="pdrop" id="p-list" role="listbox">${!S.pq.trim()?`<div class="none">${T('자주 찾는 품목 · 6자리 코드가 가장 정확합니다','Popular products · 6-digit codes are most precise')}</div>`:''}${res.length?res.map(row).join(''):`<div class="none">${hsSearch(S.pq,true).length?T('의약품·원료가 아닌 품목입니다. 이 사이트는 의약품과 그 원료(29·30류, 생약 추출물, 효소, 진단시약)만 다룹니다.','This is not a pharmaceutical product. The site covers medicines and their raw materials only (chapters 29–30, plant extracts, enzymes, diagnostic reagents).'):T('검색 결과가 없습니다. 성분명, HS 코드 숫자, 영문 품명으로도 찾아보세요.','No results. Try an ingredient, HS code or English name.')}</div>`}</div></div>`;
 }
 function appHTML(){
   const c=ctx();
   const nav=VIEWS().map(v=>v[0]==='_'?`<div class="navsec">${v[1]}</div>`:`<button type="button" data-view="${v[0]}" ${S.view===v[0]?'aria-current="page"':''}>${ico(v[2],18)}${v[1]}${v[0]==='history'&&S.hist.length?`<span class="cnt">${S.hist.length}</span>`:''}</button>`).join('');
-  const views={dash:vDash,countries:vCountries,trend:vTrend,routes:vRoutes,copilot:vCopilot,quotes:vQuotes,margin:vMargin,history:vHistory,data:vData,method:vMethod};
+  const views={dash:vDash,countries:vCountries,trend:vTrend,routes:vRoutes,copilot:vCopilot,quotes:vQuotes,margin:vMargin,history:vHistory,rivals:vRivals,regs:vRegs,data:vData,method:vMethod};
   const showFilters=!['history','method'].includes(S.view);
   const flowLock=S.view==='margin';
   const di=dsInfo();
@@ -1347,30 +1374,35 @@ function liveBanner(){
   const L=S.live;
   if(L.status==='loading')return `<div class="card fade" aria-live="polite"><div class="row" style="justify-content:space-between"><b>${T(`UN Comtrade에서 ${repName()}의 HS ${S.hs} 자료를 불러오는 중입니다`,`Loading HS ${S.hs} data reported by ${repName()} from UN Comtrade`)}</b><span class="mono small" id="live-prog-t">${L.done} / ${L.total}</span></div><div class="prog" style="margin-top:12px"><i id="live-prog" style="width:${L.done/L.total*100}%"></i></div><p class="hint" style="margin-top:8px">${T('기간마다 한 번씩 요청합니다. 처음 한 번만 기다리면 24시간 동안 저장해 둡니다.','One request per period. Results are cached for 24 hours.')}</p></div>`;
   if(L.status==='error')return `<div class="confirm" role="alert">${T('UN Comtrade에 연결하지 못했습니다. 잠시 후 다시 시도하세요. 요청이 몰리면 일시적으로 막힐 수 있습니다.','Could not reach UN Comtrade. Try again shortly; heavy traffic can cause temporary blocks.')} <button class="btn btn-sm" data-reload>${ico('refresh',16)}${T('다시 불러오기','Retry')}</button></div>`;
-  if(L.status==='empty')return `<div class="note">${T(`${repName()}은(는) 이 기간에 HS ${S.hs} 자료를 보고하지 않았습니다. 다른 보고국, 상위 코드(4자리), 연간 자료를 시도해 보세요.`,`${repName()} reported no HS ${S.hs} data for this period. Try another reporter, a 4-digit code, or annual data.`)}</div>`;
+  if(L.status==='empty')return `<div class="note">${T(`${jo(repName(),'은','는')} 이 기간에 HS ${S.hs} 자료를 보고하지 않았습니다. 다른 보고국, 상위 코드(4자리), 연간 자료를 시도해 보세요.`,`${repName()} reported no HS ${S.hs} data for this period. Try another reporter, a 4-digit code, or annual data.`)}</div>`;
   if(L.err)return `<div class="note">${T(`${L.err}개 기간은 불러오지 못해 빠졌습니다.`,`${L.err} period(s) could not be loaded and are excluded.`)} <button class="btn btn-sm" data-reload>${T('다시 불러오기','Retry')}</button></div>`;
   return '';
 }
 function viewHead(title,desc,extra=''){return `<div class="vh"><div><h1>${title}</h1><p>${desc}</p></div>${extra}</div>`}
 const GUIDES=()=>({
-  dash:[[T('무엇을 보나요','What it shows'),[T('선택한 품목·보고국·거래 방향의 시장 요약입니다.','A market summary for the chosen product, reporter and flow.'),T('평균 단가는 물량 가중, 변동은 최근 3개 기간 대 직전 3개 기간입니다.','Average is volume-weighted; change compares the last 3 periods with the 3 before.')]],[T('어떻게 읽나요','How to read it'),[T('빨간색은 내 입장에서 불리한 움직임, 초록색은 유리한 움직임입니다.','Red is unfavorable for your side, green favorable.'),T('차트에 마우스를 올리면 그 기간 수치가 나옵니다.','Hover the chart for figures.')]],[T('다음 단계','Next'),[T('실제 견적 판정은 협상 코파일럿에서 하세요.','Judge real quotes in the copilot.'),T('"요약 복사"로 보고서에 붙여 넣을 수 있습니다.','Use "Copy summary" for reports.')]]],
+  dash:[[T('무엇을 보나요','What it shows'),[T('선택한 품목·보고국·거래 방향의 시장 요약입니다.','A market summary for the chosen product, reporter and flow.'),T('평균 단가는 물량 가중, 변동은 최근 3개 기간 대 직전 3개 기간입니다.','Average is volume-weighted; change compares the last 3 periods with the 3 before.')]],[T('읽는 법','How to read'),[T('빨간색은 내 입장에서 불리한 움직임, 초록색은 유리한 움직임입니다.','Red is unfavorable for your side, green favorable.'),T('차트에 마우스를 올리면 그 기간 수치가 나옵니다.','Hover the chart for figures.')]],[T('다음 단계','Next'),[T('실제 견적 판정은 협상 코파일럿에서 하세요.','Judge real quotes in the copilot.'),T('"요약 복사"로 보고서에 붙여 넣을 수 있습니다.','Use "Copy summary" for reports.')]]],
   countries:[[T('무엇을 보나요','What it shows'),[T('상대국별 평균 단가, 물동량, 금액, 점유율, 최근 변동입니다.','Average price, volume, value, share and change by partner.')]],[T('어떻게 쓰나요','How to use'),[T('열 제목을 누르면 정렬이 바뀝니다.','Click a header to sort.'),T('행을 누르면 그 나라의 기간별 단가 차트가 나옵니다.','Click a row for that country\'s chart.')]],[T('팁','Tips'),[T('"소량" 표시 국가는 물량 0.5% 미만이라 단가가 튈 수 있습니다.','"Small" partners have <0.5% of volume; prices can be noisy.'),T('표를 CSV로 내려받을 수 있습니다.','Download the table as CSV.')]]],
   trend:[[T('무엇을 보나요','What it shows'),[T('최대 4개국과 시장 전체의 기간별 흐름입니다.','Up to 4 countries plus the market over time.')]],[T('어떻게 쓰나요','How to use'),[T('국가 버튼으로 선을 켜고 끕니다.','Toggle lines with the country buttons.'),T('단가/물동량을 바꾸고 3기간 이동평균을 켤 수 있습니다.','Switch price/volume and turn on a 3-period moving average.')]],[T('팁','Tips'),[T('변동성(CV)이 높으면 장기 고정가 계약이 유리할 수 있습니다.','High CV may favour fixed-price contracts.')]]],
-  routes:[[T('무엇을 보나요','What it shows'),[T('상대국과 보고국을 잇는 교역 루트입니다.','Trade routes between partners and the reporter.')]],[T('어떻게 읽나요','How to read'),[T('선 굵기는 물량, 색은 시장 평균 대비 단가입니다.','Width is volume; color is price vs average.'),T('국가 점이나 아래 버튼을 누르면 상세가 나옵니다.','Click a dot or button for details.')]],[T('팁','Tips'),[T('지도는 거래국이 모인 지역으로 자동 확대됩니다.','The map zooms to where partners are.')]]],
-  copilot:[[T('어떻게 쓰나요','How to use'),[T('입장, 상대 국가, 제시 단가와 조건을 입력하면 결과가 바로 바뀝니다.','Enter role, country, price and terms; results update instantly.'),T('"환율·운임 가정"에서 당일 환율과 운임 비율을 넣으세요.','Set today\'s FX and freight under assumptions.')]],[T('결과 읽는 법','Reading results'),[T('위치(%)는 시장 물량 중 이 가격 이하에서 거래된 비율입니다.','Position (%) is the share of volume at or below the price.'),T('제안 가격은 입력한 조건·통화·단위로 다시 바꿔 보여줍니다.','Suggested prices are shown in your terms, currency and unit.')]],[T('다음 단계','Next'),[T('메일 초안을 AI로 다듬고 [대괄호]를 채워 보내세요.','Polish the email with AI and fill the [brackets].'),T('"협상 기록에 저장"하면 나중에 다시 열 수 있습니다.','Save to history to reopen later.')]]],
-  quotes:[[T('무엇을 하나요','What it does'),[T('조건이 다른 여러 견적을 같은 통계 기준 단가로 바꿔 순위를 매깁니다.','Ranks quotes with different terms on one basis.')]],[T('어떻게 쓰나요','How to use'),[T('줄마다 이름, 국가, 가격, 통화, 단위, 조건을 입력합니다.','Fill name, country, price, currency, unit and terms per row.')]],[T('팁','Tips'),[T('가장 좋은 견적은 연두색으로 표시됩니다.','The best quote is highlighted.'),T('"협상"을 누르면 그 견적으로 메일을 만듭니다.','"Negotiate" sends a quote to the copilot.')]]],
+  routes:[[T('무엇을 보나요','What it shows'),[T('상대국과 보고국을 잇는 교역 루트입니다.','Trade routes between partners and the reporter.')]],[T('읽는 법','How to read'),[T('선 굵기는 물량, 색은 시장 평균 대비 단가입니다.','Width is volume; color is price vs average.'),T('국가 점이나 아래 버튼을 누르면 상세가 나옵니다.','Click a dot or button for details.')]],[T('팁','Tips'),[T('지도는 거래국이 모인 지역으로 자동 확대됩니다.','The map zooms to where partners are.')]]],
+  copilot:[[T('어떻게 쓰나요','How to use'),[T('입장, 상대 국가, 제시 단가와 조건을 입력하면 결과가 바로 바뀝니다.','Enter role, country, price and terms; results update instantly.'),T('"환율·운임 가정"에서 당일 환율과 운임 비율을 넣으세요.','Set today\'s FX and freight under assumptions.')]],[T('읽는 법','How to read'),[T('위치(%)는 시장 물량 중 이 가격 이하에서 거래된 비율입니다.','Position (%) is the share of volume at or below the price.'),T('제안 가격은 입력한 조건·통화·단위로 다시 바꿔 보여줍니다.','Suggested prices are shown in your terms, currency and unit.')]],[T('다음 단계','Next'),[T('메일 초안을 AI로 다듬고 [대괄호]를 채워 보내세요.','Polish the email with AI and fill the [brackets].'),T('"협상 기록에 저장"하면 나중에 다시 열 수 있습니다.','Save to history to reopen later.')]]],
+  quotes:[[T('무엇을 하나요','What it does'),[T('조건이 다른 여러 견적을 같은 통계 기준 단가로 바꿔 순위를 매깁니다.','Ranks quotes with different terms on one basis.')]],[T('어떻게 쓰나요','How to use'),[T('줄마다 이름, 국가, 가격, 통화, 단위, 조건을 입력합니다.','Fill name, country, price, currency, unit and terms per row.')]],[T('팁','Tips'),[T('가장 좋은 견적은 연두색으로 표시됩니다.','The best quote is highlighted.'),T('"코파일럿에서 점검"을 누르면 그 견적을 협상 코파일럿으로 보내 판정과 메일을 만듭니다.','"Negotiate" sends a quote to the copilot.')]]],
+  rivals:[[T('무엇을 보나요','What it shows'),[T('"경쟁사 비교" 탭: 이 성분이 든 완제의약품의 허가 보유 업체별 품목 점유율, 단일/복합제·전문/일반 구성, 진입 시기, 원료 출처, 원료 조달 단가 추정, 차별화 포인트입니다.','Competitors tab: product share, product mix, entry year, API source, estimated API cost and differentiation ideas per product holder.'),T('"원료 등록" 탭: 식약처에 이 원료를 등록(DMF)한 업체와 제조소·제조국입니다.','DMF tab: companies that registered the API with MFDS and their sites.')]],[T('어떻게 쓰나요','How to use'),[T('위쪽 품목(HS)과 연결된 성분이 자동으로 골라집니다. 다른 성분은 검색창에 한글 성분명으로 찾습니다.','Ingredients linked to the selected HS code are picked automatically; search others by Korean name.')]],[T('팁','Tips'),[T('여러 업체가 같은 제조소를 쓰면 경쟁사와 공급처가 겹칩니다. 견적 협상 때 대체 제조소 후보로 활용하세요.','Shared sites mean shared suppliers; use other sites as alternatives in negotiations.'),T('등록은 취급 자격이지 실제 구매 기록이 아닙니다.','A DMF registration shows eligibility to supply, not actual purchases.')]]],
+  regs:[[T('무엇을 보나요','What it shows'),[T('현재 품목 거래국과 세계 각국의 의약품 규제기관, PIC/S 가입, WHO 평가(WLA·성숙도), 그 나라 제조소의 한국 DMF 등록 건수입니다.','Regulator, PIC/S membership, WHO status (WLA, maturity level) and Korean DMF site count for partners and all countries.')]],[T('어떻게 쓰나요','How to use'),[T('아래 전체 국가 표에서 국가나 규제기관 이름으로 검색하고, PIC/S·WHO 기준으로 걸러 볼 수 있습니다.','Search the all-countries table by country or regulator and filter by PIC/S or WHO status.')]],[T('팁','Tips'),[T('비회원국 공급사는 EU·FDA·WHO PQ 실사 결과 등 GMP 근거를 더 꼼꼼히 받으세요.','For non-member suppliers, ask for EU, FDA or WHO PQ inspection outcomes.')]]],
   margin:[[T('무엇을 하나요','What it does'),[T('원가와 목표 마진으로 수출 견적가를 계산하고 대상국 평균 수출 단가와 비교합니다.','Computes an export quote from cost and margin and compares it with the market.')]],[T('어떻게 쓰나요','How to use'),[T('원가는 단위당 원화로 넣습니다. 기본값은 예시입니다.','Enter cost in KRW per unit. Defaults are examples.')]],[T('읽는 법','Reading'),[T('손익분기 아래로 팔면 손해입니다.','Selling below break-even loses money.')]]]
 });
 function guide(id){const g=GUIDES()[id];if(!g)return '';const open=S.guides[id]===true||(S.guides[id]!==false&&window.innerWidth>=900);
   return `<details class="guide" data-guide="${id}" ${open?'open':''}><summary>${ico('info',18)}${T('이 화면 사용법','How to use this screen')}<span class="gt">${T('접기·펼치기','toggle')}</span></summary><div class="guide-grid">${g.map(([h,l])=>`<div><h4>${h}</h4><ul>${l.map(x=>`<li>${x}</li>`).join('')}</ul></div>`).join('')}</div></details>`}
-function noData(){
+// Replace only some parts of the current screen so a text box being typed in (Korean IME) is never swapped out.
+function patchHTML(html,sels){const t=document.createElement('div');t.innerHTML=html;sels.forEach(sel=>{const a=document.querySelector(sel),b=t.querySelector(sel.replace(/^#view\s+/,''));if(a&&b)a.replaceWith(b)})}
+function noData(fl=S.flow){
   if(S.src==='live'&&S.live&&S.live.status==='loading')return '';
   const inSample=SAMPLE_CODES.some(s=>s===S.hs||s.startsWith(S.hs)||S.hs.startsWith(s));
   let msg;
-  if(S.src==='sample')msg=T(`예시 데이터에는 HS ${SAMPLE_CODES.join('·')} 네 품목만 들어 있습니다. HS ${S.hs}는 ${S.api?'데이터 관리에서 "UN Comtrade 실시간"을 고르면':'배포 버전(UN Comtrade 실시간)에서 보거나, 관세청·Comtrade CSV를 올리면'} 분석할 수 있습니다.`,`The sample data only covers HS ${SAMPLE_CODES.join(', ')}. To analyse HS ${S.hs}, ${S.api?'switch to live UN Comtrade data':'use the deployed version with live data, or upload a CSV'}.`);
+  if(S.src==='sample')msg=T(`예시 데이터에는 HS ${SAMPLE_CODES.join('·')} 네 품목만 들어 있습니다. HS ${S.hs}는 ${S.api?'데이터 관리에서 "UN Comtrade 직접 조회"를 고르면':'배포 버전(UN Comtrade 직접 조회)에서 보거나, 관세청·Comtrade CSV를 올리면'} 분석할 수 있습니다.`,`The sample data only covers HS ${SAMPLE_CODES.join(', ')}. To analyse HS ${S.hs}, ${S.api?'switch to live UN Comtrade data':'use the deployed version with live data, or upload a CSV'}.`);
   else if(S.src==='csv')msg=T(`올린 CSV에 HS ${S.hs} 자료(또는 이 거래 방향)가 없습니다.`,`Your CSV has no HS ${S.hs} data for this flow.`);
-  else if(S.live&&S.live.status==='ok'&&srcRecs().some(r=>r.flow===S.flow))msg=T(`${esc(repName())}는 이 품목의 금액은 보고했지만 중량·수량은 보고하지 않아 단가를 계산할 수 없습니다. 다른 보고국을 고르거나, 상대국이 신고한 자료로 보세요(예: 보고국을 상대국으로 바꾸기).`,`${esc(repName())} reported values but no weights or quantities for this product, so unit prices cannot be computed. Pick another reporter, or view the partner's own reports.`);
+  else if(S.live&&S.live.status==='ok'&&srcRecs().some(r=>r.flow===fl))msg=T(`${esc(jo(repName(),'은','는'))} 이 품목의 금액은 보고했지만 중량·수량은 보고하지 않아 단가를 계산할 수 없습니다. 다른 보고국을 고르거나, 상대국이 신고한 자료로 보세요(예: 보고국을 상대국으로 바꾸기).`,`${esc(repName())} reported values but no weights or quantities for this product, so unit prices cannot be computed. Pick another reporter, or view the partner's own reports.`);
   else if(S.mot&&S.mot!=='0')msg=T('이 운송 수단으로 신고된 자료가 없습니다. 운송 전체로 바꿔 보세요.','No data for this transport mode. Switch to all modes.');
+  else if(S.view==='margin')msg=T(`${esc(jo(repName(),'이','가'))} 신고한 HS ${S.hs} 수출 기록이 이 기간에 없습니다. 수출 마진 계산기는 수출(FOB) 통계로만 계산하니 보고국·기간·품목을 바꿔 보세요.`,`No HS ${S.hs} exports reported by ${esc(repName())} in this period. The margin calculator uses export (FOB) data only; change reporter, period or product.`);
   else msg=T('이 조건에 해당하는 자료가 없습니다. 거래 방향, 보고국, 기간을 바꿔 보세요.','No data for this selection. Change flow, reporter or period.');
   return `<div class="card empty">${ico('data',30)}<b>${T('분석할 데이터가 없습니다','No data to analyse')}</b><span class="small" style="max-width:40em">${msg}</span><div class="row" style="justify-content:center">${!inSample&&S.src!=='live'?SAMPLE_CODES.map(cd=>`<button class="btn btn-sm" data-pick="${cd}">HS ${cd} ${esc(prodName(cd))}</button>`).join(''):''}<button class="btn btn-sm btn-primary" data-view="data">${T('데이터 관리','Data sources')}</button></div></div>`;
 }
@@ -1398,7 +1430,7 @@ function vDash(){
   charts.combo=w=>{const r=lineChart(w,{h:310,labels:c.periods.map(pl),series:[{color:'var(--c1)',vals:c.mon.map(m=>m.u),area:true}],bars:{vals:c.mon.map(m=>m.w),fmt:v=>c.measure==='kg'?fBig(v/1000)+'t':fBig(v)},yFmt:fTick,refLine:{v:c.avg,label:T('기간 평균 $','Period avg $')+fP(c.avg)}});
     r.tip=i=>{const m=c.mon[i];return `<div>${pl(m.p)}</div><div>${T('단가','Price')} <b>${fUSD(m.u)}${perU(c)}</b></div><div>${T('물동량','Volume')} <b>${fW(m.w,c)}</b></div><div>${T('금액','Value')} <b>$${fBig(m.v)}</b></div>`};return r};
   const sig=signals(c);
-  const top=c.partners.filter(p=>isNum(p.u)&&!p.small).slice(0,8),umax=Math.max(...top.map(p=>p.u),c.avg)*1.08;
+  const top=c.partners.filter(p=>isNum(p.u)&&!p.small).slice(0,10),umax=Math.max(...top.map(p=>p.u),c.avg)*1.08;
   const q=c.q,lo=q.p10*.92,hi=q.p90*1.05,X=v=>clamp((v-lo)/((hi-lo)||1)*100,0,100);
   return welcome+freshNote(c)+viewHead(`${esc(prodName(c.hs))}`,`HS ${c.hs} · ${esc(repName())} ${flowWord()} · ${T(`최근 ${c.periods.length}개 기간`,`last ${c.periods.length} periods`)} · ${c.basis} · ${esc(dsWord())}`,`<div class="row"><button class="btn" data-copy-sum>${ico('copy',16)}${T('요약 복사','Copy summary')}</button><button class="btn btn-primary" data-view="copilot">${ico('deal',16)}${T('이 품목으로 협상 점검','Check a quote')}</button></div>`)+
   guide('dash')+
@@ -1414,9 +1446,9 @@ function vDash(){
       <ul class="sig">${sig.map(s=>`<li><span class="tag t-${s.tone}">${s.tag}</span><span class="t">${s.text}</span></li>`).join('')||`<li class="muted">${T('신호를 만들 데이터가 부족합니다.','Not enough data for signals.')}</li>`}</ul></div>
   </div>
   <div class="cols-eq">
-    <div class="card"><div class="card-head"><h3>${S.flow==='M'?T('공급국별 평균 단가','Average price by supplier'):T('수출 대상국별 평균 단가','Average price by destination')}</h3><button class="btn btn-sm btn-ghost" data-view="countries">${T('전체 보기','See all')} ${ico('arrow',14)}</button></div>
+    <div class="card"><div class="card-head"><h3>${S.flow==='M'?T('공급국별 평균 단가','Average price by supplier'):T('수출 대상국별 평균 단가','Average price by destination')}</h3><button class="btn btn-sm btn-ghost" data-view="countries">${T(`전체 ${c.partners.length}개국 보기`,`All ${c.partners.length} countries`)} ${ico('arrow',14)}</button></div>
       <div class="rank">${top.map(p=>`<div class="r"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name)}</span><span class="track"><span class="fill" style="width:${p.u/umax*100}%;background:${p.u<=c.avg?'var(--c1)':'var(--c2)'}"></span><span class="avgline" style="left:${c.avg/umax*100}%"></span></span><span class="mono" style="text-align:right">${fUSD(p.u)}</span></div>`).join('')}</div>
-      <p class="hint" style="margin-top:14px">${T('물량 0.5% 이상 국가 상위 8곳입니다. 검은 세로선이 시장 평균입니다.','Top 8 partners with at least 0.5% of volume. The black line is the market average.')}</p></div>
+      <p class="hint" style="margin-top:14px">${T(`물량 0.5% 이상 국가 중 상위 ${top.length}곳입니다(전체 ${c.partners.length}개국은 국가별 단가에서). 검은 세로선이 시장 평균입니다.`,`Top ${top.length} partners with at least 0.5% of volume (all ${c.partners.length} under Countries). The black line is the market average.`)}</p></div>
     <div class="card"><div class="card-head"><h3>${T('단가 분포','Price distribution')}</h3><span class="hint">${T('국가×기간 단가, 물량 가중','partner × period, volume-weighted')}</span></div>
       <div class="pos" style="height:84px;margin-top:20px"><div class="rail"></div><div class="bandq" style="left:${X(q.p25)}%;width:${X(q.p75)-X(q.p25)}%"></div>
         ${[['P10',q.p10],['P25',q.p25],[T('중앙','Med'),q.p50],['P75',q.p75],['P90',q.p90]].map(([l,v],i)=>`<div class="mk" style="left:${X(v)}%;${i===2?'':'background:var(--muted);width:1px'}"></div><div class="lab dlab" style="left:${X(v)}%;${i%2?'top:64px':''}">${l}</div>`).join('')}</div>
@@ -1451,11 +1483,319 @@ function vCountries(){
   ${sel?`<div class="card fade"><div class="card-head"><h3>${esc(sel.name)} ${T('기간별 단가 vs 시장','price vs market')}</h3><div class="row"><div class="legend"><span><i style="background:var(--c2)"></i>${esc(sel.name)}</span><span><i style="background:var(--muted)"></i>${T('시장 평균','Market average')}</span></div><button class="btn btn-sm btn-ghost" data-csel-close>${T('닫기','Close')}</button></div></div>${chartSlot('cdetail',230)}</div>${mirrorCard(c,sel)}<div hidden>
     <div class="grid3" style="margin-top:14px"><div><div class="hint">${T('평균 단가','Avg price')}</div><div class="mono" style="font-size:19px">${fUSD(sel.u)}</div></div><div><div class="hint">${T('물량 점유율','Share')}</div><div class="mono" style="font-size:19px">${(sel.share*100).toFixed(1)}%</div></div><div><div class="hint">${T('물량 변동','Volume change')}</div><div class="mono" style="font-size:19px">${fPct(sel.volchg)}</div></div></div></div>`:''}`;
 }
+/* ================= industry: competitors (MFDS DMF) and country regulators ================= */
+// PIC/S Participating Authorities, checked on picscheme.org/en/members on 2026-10-20. [year of accession, authority]
+const PICS={ARG:[2008,'INAME'],AUS:[1995,'TGA'],AUT:[1999,'BASG'],BEL:[1997,'FAMHP (AFMPS/FAGG)'],BRA:[2021,'ANVISA'],BGR:[2023,'BDA'],CAN:[1999,'Health Canada'],
+  TWN:[2013,'TFDA'],HRV:[2016,'HALMED'],CYP:[2008,'Pharmaceutical Services'],CZE:[1997,'SÚKL'],DNK:[1995,'DKMA'],EST:[2007,'State Agency of Medicines'],FIN:[1996,'FIMEA'],
+  FRA:[1997,'ANSM'],DEU:[2000,'BMG · ZLG'],GRC:[2002,'EOF'],HKG:[2016,'Pharmacy and Poisons Board'],HUN:[1995,'NNGYK (NCPHP)'],ISL:[1995,'IMA'],IDN:[2012,'Badan POM'],
+  IRN:[2018,'IFDA'],IRL:[1996,'HPRA'],ISR:[2009,'ISCP'],ITA:[2000,'AIFA'],JPN:[2014,'MHLW · PMDA'],JOR:[2026,'JFDA'],KOR:[2014,'MFDS'],LVA:[2004,'ZVA'],
+  LIE:[1995,'Office of Healthcare'],LTU:[2009,'SMCA'],MYS:[2002,'NPRA'],MLT:[2008,'Malta Medicines Authority'],MEX:[2018,'COFEPRIS'],NLD:[1995,'IGJ'],NZL:[2013,'Medsafe'],
+  NOR:[1995,'NOMA'],POL:[2006,'Chief Pharmaceutical Inspectorate'],PRT:[1999,'INFARMED'],ROU:[1995,'NAMMDR'],SAU:[2023,'SFDA'],SGP:[2000,'HSA'],SVK:[1997,'ŠÚKL (SIDC)'],
+  SVN:[2012,'JAZMP'],ZAF:[2007,'SAHPRA'],ESP:[1998,'AEMPS'],SWE:[1996,'MPA'],CHE:[1996,'Swissmedic'],THA:[2016,'Thai FDA'],TUR:[2018,'TİTCK (TMMDA)'],UKR:[2011,'SMDC'],
+  GBR:[1999,'MHRA'],USA:[2011,'FDA']};
+// Medicines regulators by country (acronym · English name). Main names follow WHO, PIC/S and the agencies' own sites.
+const REGDB={
+ // East & South-East Asia
+ KOR:'MFDS (Ministry of Food and Drug Safety)',CHN:'NMPA (National Medical Products Administration)',JPN:'MHLW · PMDA',TWN:'TFDA (Taiwan Food and Drug Administration)',
+ HKG:'Department of Health · Pharmacy and Poisons Board',MAC:'ISAF (Pharmaceutical Administration Bureau)',MNG:'Ministry of Health',
+ SGP:'HSA (Health Sciences Authority)',MYS:'NPRA (National Pharmaceutical Regulatory Agency)',THA:'Thai FDA',IDN:'BPOM (Indonesian FDA)',PHL:'FDA Philippines',
+ VNM:'DAV (Drug Administration of Vietnam)',KHM:'DDF (Department of Drugs and Food)',LAO:'FDD (Food and Drug Department)',MMR:'FDA Myanmar',BRN:'Ministry of Health (Department of Pharmaceutical Services)',
+ // South & Central Asia
+ IND:'CDSCO (Central Drugs Standard Control Organisation)',PAK:'DRAP (Drug Regulatory Authority of Pakistan)',BGD:'DGDA (Directorate General of Drug Administration)',LKA:'NMRA (National Medicines Regulatory Authority)',
+ NPL:'DDA (Department of Drug Administration)',KAZ:'Committee of Medical and Pharmaceutical Control · NCELS',UZB:'CPPS (Center for Pharmaceutical Product Safety, Ministry of Health)',
+ // Middle East & North Africa
+ SAU:'SFDA (Saudi Food and Drug Authority)',ARE:'EDE (Emirates Drug Establishment)',JOR:'JFDA (Jordan Food and Drug Administration)',ISR:'Ministry of Health (Pharmaceutical Division)',
+ IRN:'IFDA (Iran Food and Drug Administration)',TUR:'TİTCK (Turkish Medicines and Medical Devices Agency)',EGY:'EDA (Egyptian Drug Authority)',QAT:'Ministry of Public Health',
+ KWT:'Ministry of Health',OMN:'DGPA&DC (Directorate General of Pharmaceutical Affairs and Drug Control)',BHR:'NHRA (National Health Regulatory Authority)',LBN:'Ministry of Public Health',IRQ:'Ministry of Health',
+ DZA:'ANPP (National Agency for Pharmaceutical Products)',MAR:'AMMPS (Moroccan Agency for Medicines and Health Products)',TUN:'ANMPS (National Agency of Medicines and Health Products)',
+ // Sub-Saharan Africa
+ ZAF:'SAHPRA (South African Health Products Regulatory Authority)',NGA:'NAFDAC',GHA:'FDA Ghana',KEN:'PPB (Pharmacy and Poisons Board)',TZA:'TMDA (Tanzania Medicines and Medical Devices Authority)',
+ UGA:'NDA (National Drug Authority)',RWA:'Rwanda FDA',ETH:'EFDA (Ethiopian Food and Drug Authority)',ZWE:'MCAZ (Medicines Control Authority of Zimbabwe)',ZMB:'ZAMRA (Zambia Medicines Regulatory Authority)',
+ MOZ:'ANARME',SEN:'ARP (Senegalese Pharmaceutical Regulatory Agency)',CIV:'AIRP',BWA:'BoMRA (Botswana Medicines Regulatory Authority)',MWI:'PMRA (Pharmacy and Medicines Regulatory Authority)',
+ // Europe (EU)
+ AUT:'BASG (Federal Office for Safety in Health Care)',BEL:'FAMHP (Federal Agency for Medicines and Health Products)',BGR:'BDA (Bulgarian Drug Agency)',HRV:'HALMED',CYP:'Pharmaceutical Services, Ministry of Health',
+ CZE:'SÚKL (State Institute for Drug Control)',DNK:'DKMA (Danish Medicines Agency)',EST:'State Agency of Medicines',FIN:'FIMEA (Finnish Medicines Agency)',FRA:'ANSM',DEU:'BfArM · PEI',GRC:'EOF (National Organization for Medicines)',
+ HUN:'NNGYK (National Center for Public Health and Pharmacy)',IRL:'HPRA (Health Products Regulatory Authority)',ITA:'AIFA (Italian Medicines Agency)',LVA:'ZVA (State Agency of Medicines)',LTU:'VVKT (State Medicines Control Agency)',
+ LUX:'Ministry of Health (Division of Pharmacy and Medicines)',MLT:'Malta Medicines Authority',NLD:'CBG-MEB · IGJ',POL:'URPL · GIF',PRT:'INFARMED',ROU:'NAMMDR',SVK:'ŠÚKL (State Institute for Drug Control)',
+ SVN:'JAZMP',ESP:'AEMPS (Spanish Agency of Medicines and Medical Devices)',SWE:'MPA (Swedish Medical Products Agency)',
+ // Europe (non-EU)
+ GBR:'MHRA (Medicines and Healthcare products Regulatory Agency)',CHE:'Swissmedic',NOR:'NOMA (Norwegian Medical Products Agency)',ISL:'IMA (Icelandic Medicines Agency)',LIE:'Office of Healthcare',
+ UKR:'SMDC (State Service on Medicines and Drugs Control)',SRB:'ALIMS (Medicines and Medical Devices Agency of Serbia)',BIH:'ALMBIH (Agency for Medicinal Products and Medical Devices)',MKD:'MALMED',
+ ALB:'AKBPM (National Agency for Medicines and Medical Devices)',MNE:'CInMED (Institute for Medicines and Medical Devices)',MDA:'AMDM (Medicines and Medical Devices Agency)',
+ RUS:'Ministry of Health · Roszdravnadzor',BLR:'Ministry of Health (Center for Examinations and Tests in Health Service)',ARM:'SCDMTE (Scientific Centre of Drug and Medical Technology Expertise)',GEO:'Regulation Agency for Medical and Pharmaceutical Activities',
+ // Americas
+ USA:'FDA (US Food and Drug Administration)',PRI:'FDA (US Food and Drug Administration)',CAN:'Health Canada',MEX:'COFEPRIS',BRA:'ANVISA',ARG:'ANMAT (INAME)',CHL:'ISP (Institute of Public Health)',
+ COL:'INVIMA',PER:'DIGEMID',ECU:'ARCSA',URY:'Ministry of Public Health',PRY:'DINAVISA',BOL:'AGEMED',VEN:'INHRR',CRI:'Ministry of Health',PAN:'MINSA (Directorate of Pharmacy and Drugs)',
+ GTM:'MSPAS',DOM:'DIGEMAPS',CUB:'CECMED',JAM:'Ministry of Health and Wellness',SLV:'DNM (National Directorate of Medicines)',HND:'ARSA',
+ // Oceania
+ AUS:'TGA (Therapeutic Goods Administration)',NZL:'Medsafe',FJI:'Ministry of Health and Medical Services'
+};
+// WHO-Listed Authorities for medicines and/or vaccines (WHO list as of December 2025).
+const WLA={AUS:'의약품·백신',AUT:'의약품·백신',BEL:'의약품·백신',BGR:'의약품·백신',CAN:'의약품·백신',HRV:'의약품·백신',CYP:'의약품·백신',CZE:'의약품·백신',DNK:'의약품·백신',EST:'의약품·백신',
+ FIN:'의약품·백신',FRA:'의약품·백신',DEU:'의약품·백신',GRC:'의약품·백신',HUN:'의약품·백신',ISL:'의약품·백신',IDN:'백신',IRL:'의약품·백신',ITA:'의약품·백신',JPN:'의약품',LVA:'의약품·백신',
+ LIE:'의약품·백신',LTU:'의약품·백신',LUX:'의약품·백신',MLT:'의약품·백신',NLD:'의약품·백신',NOR:'의약품·백신',POL:'의약품·백신',PRT:'의약품·백신',KOR:'의약품·백신',ROU:'의약품·백신',
+ SGP:'의약품',SVK:'의약품·백신',SVN:'의약품·백신',ESP:'의약품·백신',SWE:'의약품·백신',CHE:'의약품·백신',GBR:'의약품·백신',USA:'의약품·백신',PRI:'의약품·백신'};
+// WHO Global Benchmarking maturity level 3/4 (WHO list as of August 2026).
+const WHOML={CHN:['ML3','백신'],EGY:['ML3','의약품·백신'],ETH:['ML3','의약품·백신'],GHA:['ML3','의약품·백신'],IND:['ML3','백신'],IDN:['ML3','백신'],KAZ:['ML3','의약품·백신'],
+ MOZ:['ML3','의약품·백신'],NGA:['ML3','의약품·백신'],KOR:['ML4','의약품·백신'],RWA:['ML3','의약품·백신'],SAU:['ML4','의약품·백신'],SEN:['ML3','의약품·백신'],SRB:['ML3','백신'],
+ SGP:['ML4','의약품·백신'],ZAF:['ML3','백신'],THA:['ML3','백신'],TUR:['ML3','의약품·백신'],TZA:['ML3','의약품·백신'],VNM:['ML3','백신'],ZWE:['ML3','의약품·백신']};
+const WHO_DATE={wla:'2025-12',ml:'2026-08'};
+const scopeEn=s=>S.lang==='en'?s.replace('의약품·백신','medicines & vaccines').replace('의약품','medicines').replace('백신','vaccines'):s;
+function whoTag(a3){if(a3==='PRI')a3='USA';const w=WLA[a3],m=WHOML[a3];const out=[];
+  if(w)out.push(`<span class="tag t-good" title="${T(`WHO 공인 규제기관(WLA) · ${w}`,`WHO-Listed Authority · ${scopeEn(w)}`)}">WLA ${esc(scopeEn(w))}</span>`);
+  if(m)out.push(`<span class="tag ${m[0]==='ML4'?'t-good':'t-neutral'}" title="${T(`WHO 성숙도 ${m[0]} · ${m[1]}`,`WHO maturity ${m[0]} · ${scopeEn(m[1])}`)}">${m[0]} ${esc(scopeEn(m[1]))}</span>`);
+  return out.length?`<span class="row" style="gap:4px">${out.join('')}</span>`:'<span class="muted">—</span>'}
+
+const EU27=new Set('AUT BEL BGR HRV CYP CZE DNK EST FIN FRA DEU GRC HUN IRL ITA LVA LTU LUX MLT NLD POL PRT ROU SVK SVN ESP SWE'.split(' '));
+const PICS_DATE='2026-10-20';
+function regInfo(a3){const auth=REGDB[a3]||'';if(a3==='PRI')a3='USA';const p=PICS[a3];return {member:!!p,year:p?p[0]:null,auth:auth||(p?p[1]:''),eu:EU27.has(a3),wla:WLA[a3]||'',ml:WHOML[a3]||null}}
+function regNote(a3){
+  const dest=a3===repInfo().a3?S.flow==='M':S.flow==='X';
+  if((a3==='KOR'||a3==='USA')&&!dest)return '';
+  if(a3==='KOR')return T('수입 원료는 식약처 DMF 등록 대상인지 먼저 확인합니다.','Check whether the API needs an MFDS DMF registration.');
+  if(a3==='USA')return T('원료는 FDA에 DMF(Type II)를 제출하는 방식이 일반적입니다.','APIs usually reference a Type II DMF filed with FDA.');
+  if(a3==='GBR')return T('원료 품질은 보통 CEP, ASMF, 또는 허가 서류 안의 원료 전체 자료로 뒷받침합니다.','APIs are usually supported by a CEP, an ASMF or full API data in the dossier.');
+  if(a3==='CHN'||a3==='IND')return T('PIC/S 비회원국입니다. GMP 근거로 다른 당국(EU·FDA·WHO PQ 등)의 실사 결과를 함께 받아 두면 좋습니다.','Not a PIC/S member; ask for inspection outcomes from other authorities (EU, FDA, WHO PQ).');
+  return '';
+}
+function picsTag(a3){if(!a3||!REF.byA3[a3])return '<span class="muted">—</span>';const r=regInfo(a3);return r.member?`<span class="tag t-good" title="${T(`PIC/S ${r.year}년 가입`,`PIC/S since ${r.year}`)}">PIC/S ${r.year}</span>`:`<span class="tag t-neutral">${T('PIC/S 비회원','Not PIC/S')}</span>`}
+
+const jo=(w,a,b)=>{const ch=String(w).trim().slice(-1).charCodeAt(0);return w+((ch>=0xAC00&&ch<=0xD7A3&&(ch-0xAC00)%28)?a:b)};
+const DMF_ALIAS={'대한민국':'KOR','체코공화국':'CZE','말레이지아':'MYS','호주':'AUS','미합중국':'USA'};
+const dmfA3=k=>DMF_ALIAS[k]||REF.name2a3[k]||null;
+const dmfCN=k=>{if(S.lang!=='en')return k;const a=dmfA3(k);return a&&REF.byA3[a]?REF.byA3[a].en:k};
+const DMF={st:'idle',rows:[],asof:'',total:0,src:'',live:{}};
+async function loadDMF(){
+  if(DMF.st!=='idle')return;DMF.st='loading';
+  try{const r=await fetchT('data/dmf.json',{},30000);if(!r.ok)throw new Error(r.status);const j=await r.json();
+    DMF.rows=j.rows.map(x=>({i:x[0],e:j.dict[x[1]],m:j.dict[x[2]],c:j.dict[x[3]]?j.dict[x[3]].split(','):[],d:x[4],no:x[5],n:x[6],biz:x[7]||''}));
+    DMF.asof=j.asof;DMF.total=j.total;DMF.src=j.src;DMF.en=j.en||{};DMF.st='ok';
+    const g={};DMF.rows.forEach(r=>{const k=dmfNorm(r.i);const x=g[k]||(g[k]={n:0,nm:{}});x.n++;x.nm[r.i]=(x.nm[r.i]||0)+1});DMF.ing=Object.values(g).map(x=>[Object.entries(x.nm).sort((a,b)=>b[1]-a[1])[0][0],x.n]).sort((a,b)=>b[1]-a[1]);
+  }catch(e){DMF.st='error'}
+  if(S.view==='rivals'||S.view==='regs')render();
+}
+const dmfNorm=s=>String(s||'').replace(/[\s·\-()]/g,'').toLowerCase();
+// Ingredient names in the DMF list that match the Korean keywords of the current HS code.
+function dmfTokens(hs){
+  if(DMF.st!=='ok')return [];const code=String(hs).slice(0,6);const hs6=code.length<6?REF.hs.filter(x=>x.code.length===6&&x.code.startsWith(code)):[hsInfo(code)].filter(Boolean);if(!hs6.length)return [];
+  const toks=Array.from(new Set(hs6.map(h=>h.kw||'').join(' ').split(/[\s,()·/]+/).filter(t=>/^[가-힣A-Za-z0-9\-]+$/.test(t)&&/[가-힣]/.test(t)&&t.length>=3&&!/^(원료|의약품|완제의약품|항생제|항생물질|바이오|바이오의약품|바이오시밀러|유도체|완제|백신|비타민C?|추출물|아미드|주사제|제네릭|소매용|치료제|투여량|정제|캡슐|단일클론항체|항체의약품|원료의약품|마크로라이드|세팔로스포린|페니실린)$/.test(t))));
+  return toks.map(dmfNorm);
+}
+const ingLinked=(hs,ing)=>{const nn=dmfNorm(ing);return dmfTokens(hs).some(t=>nn.includes(t))};
+function dmfSuggest(hs){const toks=dmfTokens(hs);if(!toks.length)return [];
+  const out=[];DMF.ing.forEach(([name,cnt])=>{const nn=dmfNorm(name);if(toks.some(t=>nn.includes(t)))out.push([name,cnt])});
+  return out.slice(0,10);
+}
+function dmfSearch(q){const nq=dmfNorm(q);if(!nq||DMF.st!=='ok')return [];return DMF.ing.filter(([n])=>dmfNorm(n).includes(nq)).slice(0,14)}
+const mfgKey=s=>String(s||'').toLowerCase().replace(/[’']/g,'').replace(/[\s,.]+(co\.?,?\s*ltd|company\s+limited|private\s+limited|pvt\.?\s*ltd|limited|ltd|s\.?\s?a\.?|s\.?l\.?u\.?|gmbh|inc|corporation|corp)\.?\s*$/,'').replace(/[.,()\s\-]/g,'');
+function dmfRows(ing){const L=S.dmfLive[ing];if(L&&L.rows)return L.rows;const k=dmfNorm(ing);return DMF.rows.filter(r=>dmfNorm(r.i)===k)}
+async function dmfLive(ing){
+  if(!S.dmfKey||!ing||S.dmfLive[ing])return;S.dmfLive[ing]={pending:true};
+  try{const r=await fetchT('api/dmf?q='+encodeURIComponent(ing),{},25000);if(!r.ok)return;const j=await r.json();if(!j.ok||!Array.isArray(j.items))return;
+    const k=dmfNorm(ing);const rows=j.items.filter(x=>dmfNorm(x.i)===k).map(x=>({i:x.i,e:x.e,m:x.m,c:String(x.c||'').split(',').map(s=>s.trim()).filter(Boolean),d:x.d,no:x.no,n:x.n}));
+    if(rows.length&&rows.length>=DMF.rows.filter(r=>dmfNorm(r.i)===k).length){S.dmfLive[ing]={rows,at:String(j.fetchedAt||'').slice(0,10)||new Date().toISOString().slice(0,10)};if(S.view==='rivals'&&S.dmfIng===ing)render()}}catch(e){}
+}
+function dmfPick(ing){S.compSel=null;S.compMore=false;S.dmfIng=ing;S.dmfFor=S.hs;S.dmfQ='';S.dmfMore=false;store.set('dmf',{ing,hs:S.hs});render()}
+function dmfCSV(ing){const H=['dmf_no','ingredient','korean_company','manufacturer','manufacturer_country','registered','category'];
+  return [H.join(',')].concat(dmfRows(ing).map(r=>[r.no,r.i,r.e,r.m,r.c.join(' / '),r.d,r.n].map(csvCell).join(','))).join('\n')}
+
+function vRivals(){
+  if(DMF.st==='idle')loadDMF();
+  const head=viewHead(T('경쟁사·제조소','Competitors & manufacturers'),T('성분을 고르면 그 성분이 든 완제의약품의 허가 보유 업체(경쟁사)를 비교하고, 원료 등록 업체와 제조소를 보여줍니다. 출처: 식약처 의약품 제품 허가정보, 원료의약품 등록(DMF) 현황.','Compare product holders (competitors) for an ingredient and see API registrants and sites. Sources: MFDS product permits and DMF register.'));
+  if(DMF.st==='loading'||DMF.st==='idle')return head+`<div class="card" aria-live="polite">${T('식약처 DMF 등록 목록을 불러오는 중입니다…','Loading the MFDS DMF register…')}</div>`;
+  if(DMF.st==='error')return head+`<div class="confirm" role="alert">${T('DMF 목록을 불러오지 못했습니다. 새로고침해 주세요.','Could not load the DMF list. Please reload.')}</div>`;
+  const sug=dmfSuggest(S.hs);
+  if(!S.dmfIng||S.dmfFor!==S.hs){S.dmfMore=false;S.compSel=null;S.compMore=false;if(sug.length){S.dmfIng=sug[0][0];S.dmfFor=S.hs}else{S.dmfIng='';S.dmfFor=S.hs}}
+  if(S.dmfIng&&S.dmfKey&&!S.dmfLive[S.dmfIng])setTimeout(()=>dmfLive(S.dmfIng),0);
+  const res=S.dmfQ&&S.dmfQ.trim()?dmfSearch(S.dmfQ):[];
+  const chip=([n,c])=>`<button type="button" class="chipbtn" aria-pressed="${S.dmfIng===n}" data-dmf-pick="${esc(n)}">${esc(n)} <span style="opacity:.65">${c}</span></button>`;
+  const searchBox=`<div class="card"><div class="card-head"><h3>${T('성분 고르기','Choose an ingredient')}</h3><span class="hint">${T(`식약처 DMF ${DMF.total.toLocaleString()}건 · 기준일 ${DMF.asof}`,`MFDS DMF ${DMF.total.toLocaleString()} records · as of ${DMF.asof}`)}</span></div>
+    <div class="field" style="max-width:420px"><label for="dmf-q">${T('성분명 검색 (한글, 예: 아세트아미노펜, 세프트리악손, 아스코르브산)','Search ingredient (Korean names)')}</label><input id="dmf-q" class="input" autocomplete="off" value="${esc(S.dmfQ||'')}" placeholder="${T('성분명 입력','Ingredient name')}"></div>
+    <div id="dmf-res">${res.length?`<div class="chips" style="margin-top:10px">${res.map(chip).join('')}</div>`:S.dmfQ&&S.dmfQ.trim()?`<p class="hint" style="margin-top:8px">${T('일치하는 성분이 없습니다. 염(나트륨·염산염 등)을 빼고 핵심 이름으로 찾아보세요.','No match. Try the base name without the salt.')}</p>`:''}</div>
+    ${sug.length?`<div class="hint" style="margin-top:12px">${T(`HS ${S.hs} 품목과 연결된 성분`,`Ingredients linked to HS ${S.hs}`)}</div><div class="chips" style="margin-top:6px">${sug.map(chip).join('')}</div>`:`<p class="hint" style="margin-top:10px">${T(`HS ${S.hs} 품목과 자동으로 연결된 성분이 없습니다. 위에서 성분명을 직접 검색하거나, 등록이 많은 성분을 골라 보세요.`,`No ingredient is linked to HS ${S.hs}; search above or pick a common one.`)}</p><div class="chips" style="margin-top:6px">${DMF.ing.slice(0,8).map(chip).join('')}</div>`}</div>`;
+  if(!S.dmfIng)return head+guide('rivals')+searchBox;
+  const rows=dmfRows(S.dmfIng);const lv=S.dmfLive[S.dmfIng];const live=lv&&lv.rows?lv:null;
+  if(!rows.length)return head+guide('rivals')+searchBox+`<div class="card empty">${ico('users',32)}<b>${T(`'${esc(S.dmfIng)}' 등록 자료가 없습니다`,`No registrations for '${esc(S.dmfIng)}'`)}</b><span class="small">${T('다른 성분을 검색해 보세요.','Search another ingredient.')}</span></div>`;
+  const byE={},byM={},byC={};
+  rows.forEach(r=>{const e=byE[r.e]||(byE[r.e]={n:0,c:new Set(),m:new Set(),last:''});e.n++;r.c.forEach(x=>e.c.add(x));e.m.add(r.m);if(r.d>e.last)e.last=r.d;
+    const mk=mfgKey(r.m)+'|'+r.c.join(',');const m=byM[mk]||(byM[mk]={m:r.m,c:r.c,e:new Set(),last:'',nm:{}});m.nm[r.m]=(m.nm[r.m]||0)+1;m.e.add(r.e);if(r.d>m.last)m.last=r.d;
+    r.c.forEach(x=>{byC[x]=(byC[x]||0)+1})});
+  const E=Object.entries(byE).sort((a,b)=>b[1].n-a[1].n||(a[1].last<b[1].last?1:-1));
+  Object.values(byM).forEach(m=>{m.m=Object.entries(m.nm).sort((a,b)=>b[1]-a[1])[0][0]});const M=Object.values(byM).sort((a,b)=>b.e.size-a.e.size||(a.last<b.last?1:-1));
+  const C=Object.entries(byC).sort((a,b)=>b[1]-a[1]);const cTot=C.reduce((t,x)=>t+x[1],0)||1;
+  const now=new Date(),cut=new Date(now.getFullYear()-3,now.getMonth(),now.getDate()).toISOString().slice(0,10),cut2=new Date(now.getFullYear()-6,now.getMonth(),now.getDate()).toISOString().slice(0,10);
+  const recent=rows.filter(r=>r.d>=cut).length,prev=rows.filter(r=>r.d>=cut2&&r.d<cut).length;
+  const c=ctx();const pBy={};(c.partners||[]).forEach(p=>pBy[p.key]=p);
+  const picsShare=C.reduce((t,[k,v])=>t+(regInfo(dmfA3(k)).member?v:0),0)/cTot;
+  const ins=[];
+  if(C[0])ins.push(T(`제조소 국가는 ${jo(C[0][0],'이','가')} ${Math.round(C[0][1]/cTot*100)}%로 가장 많습니다.`,`${dmfCN(C[0][0])} accounts for ${Math.round(C[0][1]/cTot*100)}% of manufacturing-site countries.`));
+  ins.push(T(`최근 3년(${cut} 이후) 신규 등록은 ${recent}건, 그 전 3년은 ${prev}건입니다.${recent>prev&&recent>=3?' 최근 들어 이 원료를 등록하는 국내 업체가 늘었습니다.':recent<prev?' 신규 등록은 줄어드는 추세입니다.':''}`,`${recent} new registrations in the last 3 years (since ${cut}) vs ${prev} in the 3 years before.`));
+  ins.push(T(`등록 제조소의 ${Math.round(picsShare*100)}%가 PIC/S 회원국에 있습니다.`,`${Math.round(picsShare*100)}% of registered sites are in PIC/S member countries.`));
+  if(E[0])ins.push(T(`등록이 가장 많은 국내 업체는 ${E[0][0]}(${E[0][1].n}건)입니다.${E[0][1].n<=2&&E.length>5?' 특정 업체에 쏠리지 않고 여러 회사가 나눠 취급합니다.':''}`,`Most registrations: ${E[0][0]} (${E[0][1].n}).`));
+  const lim=S.dmfMore?rows.length:40;
+  const list=rows.slice().sort((a,b)=>a.d<b.d?1:-1);
+  const repNote=+S.reporter!==410?`<div class="note">${T(`식약처 DMF는 한국 시장 자료입니다. 지금 보고국은 ${esc(jo(repName(),'이라서','라서'))} 아래 단가는 ${esc(repName())} 통계이고, 업체·제조소 목록은 한국 기준입니다.`,`The MFDS DMF register covers the Korean market. Prices below are ${esc(repName())} statistics; companies and sites are Korean registrations.`)}</div>`:'';
+  const tb=(k,l)=>`<button type="button" data-riv-tab="${k}" aria-pressed="${(S.rivTab||'market')===k}">${l}</button>`;
+  const tabs=`<div class="seg" role="group" aria-label="${T('보기','View')}" style="align-self:flex-start">${tb('market',T('경쟁사 비교·차별점 (완제품)','Competitors & differentiation'))}${tb('dmf',T('원료 등록 업체·제조소 (DMF)','API registrants & sites (DMF)'))}</div>`;
+  if((S.rivTab||'market')==='market')return head+guide('rivals')+repNote+searchBox+tabs+marketTab(S.dmfIng,c,rows);
+  return head+guide('rivals')+repNote+searchBox+tabs+
+  `<div class="kpis">
+    <div class="kpi"><div class="k">${T('등록 건수','Registrations')}</div><div class="v">${rows.length}</div><div class="s">${esc(S.dmfIng)}${live?T(` · 식약처 조회 ${live.at}`,` · MFDS lookup ${live.at}`):T(` · 기준일 ${DMF.asof}`,` · as of ${DMF.asof}`)}</div></div>
+    <div class="kpi"><div class="k">${T('국내 등록 업체 (수입·제조사)','Korean registrants')}</div><div class="v">${E.length}</div><div class="s">${T('이 원료를 등록한 회사 수','companies holding a registration')}</div></div>
+    <div class="kpi"><div class="k">${T('해외·국내 제조소','Manufacturing sites')}</div><div class="v">${M.length}</div><div class="s">${T(`${C.length}개국`,`${C.length} countries`)}</div></div>
+    <div class="kpi"><div class="k">${T('최근 3년 신규 등록','New in last 3 years')}</div><div class="v">${recent}</div><div class="s">${T(`${cut} 이후 · 이전 3년 ${prev}건`,`since ${cut} · prior 3 yrs ${prev}`)}</div></div>
+  </div>
+  <div class="card"><div class="card-head"><h3>${T('요점','Key points')}</h3><span class="tag t-neutral">${T('자동 분석','auto')}</span></div><ul class="ins">${ins.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>
+  <div class="cols-eq">
+  <div class="card"><div class="card-head"><h3>${T('국내 등록 업체 (수입·제조사)','Korean registrants')}</h3><span class="hint">${T('등록 건수 순','by registrations')}</span></div>
+    <div class="tbl-wrap"><table class="tbl" style="min-width:0"><thead><tr><th>${T('업체','Company')}</th><th class="r">${T('등록','Reg.')}</th><th>${T('제조국','Countries')}</th><th>${T('최근 등록','Latest')}</th></tr></thead><tbody>
+    ${E.slice(0,15).map(([n,e])=>`<tr><td><b>${esc(n)}</b></td><td class="r mono">${e.n}</td><td class="small">${esc([...e.c].map(dmfCN).join(', '))}</td><td class="mono small">${esc(e.last)}</td></tr>`).join('')}</tbody></table></div>${E.length>15?`<p class="hint">${T(`상위 15곳만 표시 · 전체 ${E.length}곳은 아래 전체 등록 목록이나 CSV로 보세요.`,`Top 15 of ${E.length}; see the full list or CSV below.`)}</p>`:''}</div>
+  <div class="card"><div class="card-head"><h3>${T('제조국과 단가','Countries and prices')}</h3><span class="hint">${T(`단가: 현재 화면의 HS ${S.hs} ${flowWord()} 통계`,`price: HS ${S.hs} ${flowWord()} statistics`)}</span></div>
+    <div class="tbl-wrap"><table class="tbl" style="min-width:0"><thead><tr><th>${T('제조국','Country')}</th><th class="r">${T('제조소 등록','Sites')}</th><th>PIC/S · WHO</th><th class="r">${T('평균 단가','Avg price')}</th></tr></thead><tbody>
+    ${C.map(([k,v])=>{const a3=dmfA3(k);const p=ingLinked(S.hs,S.dmfIng)&&a3&&pBy[a3];return `<tr><td><b>${esc(dmfCN(k))}</b></td><td class="r"><span class="bar-mini" style="width:${v/C[0][1]*50}px"></span> <span class="mono">${v}</span></td><td><div style="display:flex;flex-direction:column;gap:4px;align-items:flex-start">${a3?picsTag(a3):''}${a3&&(WLA[a3==='PRI'?'USA':a3]||WHOML[a3])?whoTag(a3):''}</div></td><td class="r mono">${p&&isNum(p.u)?fUSD(p.u)+perU(c):'—'}</td></tr>`}).join('')}</tbody></table></div>
+    <p class="hint">${T('단가가 "—"이면 현재 통계에 그 나라 거래가 없거나, 고른 성분이 현재 품목(HS)에 속하지 않는 경우입니다.','"—" means no trade with that country in the current data, or the ingredient is not under the current HS code.')}</p></div>
+  </div>
+  <div class="card"><div class="card-head"><h3>${T('제조소별 사용 업체','Sites and the companies using them')}</h3><span class="hint">${T('여러 국내 업체가 같은 제조소를 쓰면 공급처가 겹친다는 뜻입니다','shared sites mean competitors share a supplier')}</span></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>${T('제조소','Manufacturer')}</th><th>${T('국가','Country')}</th><th class="r">${T('국내 업체 수','Companies')}</th><th>${T('국내 업체','Korean companies')}</th></tr></thead><tbody>
+    ${M.slice(0,25).map(m=>`<tr><td><b>${esc(m.m||'—')}</b></td><td class="small">${esc(m.c.map(dmfCN).join(', '))}</td><td class="r mono">${m.e.size}</td><td class="small">${esc([...m.e].slice(0,6).join(', '))}${m.e.size>6?' …':''}</td></tr>`).join('')}</tbody></table></div></div>
+  <div class="card"><div class="card-head"><h3>${T('전체 등록 목록','All registrations')}</h3><div class="row"><button class="btn btn-sm" data-dl="dmf">${ico('down',16)}CSV</button></div></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>${T('등록일','Date')}</th><th>${T('국내 업체','Company')}</th><th>${T('제조소','Manufacturer')}</th><th>${T('국가','Country')}</th><th>${T('등록번호','No.')}</th></tr></thead><tbody>
+    ${list.slice(0,lim).map(r=>`<tr><td class="mono small">${esc(r.d)}</td><td>${esc(r.e)}</td><td class="small">${esc(r.m||'—')}</td><td class="small">${esc(r.c.map(dmfCN).join(', '))}</td><td class="mono small">${esc(r.no)}</td></tr>`).join('')}</tbody></table></div>
+    ${list.length>lim?`<button class="btn btn-sm" data-dmf-more style="margin-top:10px">${T(`${list.length-lim}건 더 보기`,`Show ${list.length-lim} more`)}</button>`:''}</div>
+  <p class="hint">${T('DMF 등록은 그 원료를 국내 의약품에 쓸 수 있다는 등록 기록입니다. 등록 업체에는 원료 수입상·대리인이 포함되고, 다른 회사 등록을 인용해 쓰는 제조사는 나오지 않습니다. 실제 구매량·가격은 공개되지 않으며, 등록 후 쓰지 않는 경우도 있습니다. 출처: ','A DMF registration shows eligibility to supply, not actual purchases. Registrants include importers and agents; manufacturers that reference another company\'s registration are not listed. Volumes and prices are not published. Source: ')}<a href="https://www.data.go.kr/data/15057075/openapi.do" target="_blank" rel="noopener">${esc(DMF.src)}</a>${T(` · 기준일 ${DMF.asof}`,` · as of ${DMF.asof}`)}.</p>`;
+}
+
+function regDirRows(c,dmfBy){
+  const pBy={};(c.partners||[]).forEach(p=>pBy[p.key]=p);
+  const keys=new Set([...Object.keys(REGDB),...Object.keys(PICS),...Object.keys(WLA),...Object.keys(WHOML),...Object.keys(pBy).filter(k=>REF.byA3[k])]);
+  return [...keys].filter(k=>REF.byA3[k]).map(k=>{const r=regInfo(k),cc=REF.byA3[k];return {k,name:S.lang==='en'?cc.en:cc.ko,en:cc.en,ko:cc.ko,r,p:pBy[k]||null,dmf:dmfBy[k]||0}});
+}
+function regDirTable(c,dmfBy){
+  const q=String(S.regQ||'').trim().toLowerCase(),f=S.regF||'all';
+  let L=regDirRows(c,dmfBy).filter(x=>(f==='all'||(f==='pics'&&x.r.member)||(f==='who'&&(x.r.wla||x.r.ml))||(f==='trade'&&x.p)||(f==='non'&&!x.r.member))&&(!q||x.ko.toLowerCase().includes(q)||x.en.toLowerCase().includes(q)||x.k.toLowerCase()===q||x.r.auth.toLowerCase().includes(q)));
+  L.sort((a,b)=>(b.p?b.p.share:-1)-(a.p?a.p.share:-1)||b.dmf-a.dmf||a.name.localeCompare(b.name,S.lang==='en'?'en':'ko'));
+  const lim=S.regMore?L.length:40;
+  return `<div id="reg-dir"><div class="hint" style="margin:0 0 8px">${T(`${L.length}개국`,`${L.length} countries`)}</div><div class="tbl-wrap"><table class="tbl"><thead><tr><th>${T('국가','Country')}</th><th>${T('규제기관','Regulator')}</th><th>PIC/S</th><th>${T('WHO 평가','WHO status')}</th><th class="r">${T('한국 DMF 제조소','KR DMF sites')}</th><th class="r">${T('현재 품목 거래','In this product')}</th></tr></thead><tbody>
+    ${L.slice(0,lim).map(x=>`<tr><td><b>${esc(x.name)}</b></td><td class="small" style="white-space:normal;min-width:220px;max-width:360px">${esc(x.r.auth||'—')}${x.r.eu?' · EU (EMA)':''}</td><td>${picsTag(x.k)}</td><td>${whoTag(x.k)}</td><td class="r mono">${DMF.st==='ok'?x.dmf.toLocaleString():'…'}</td><td class="r mono">${x.p?(x.p.share*100).toFixed(1)+'% · '+fUSD(x.p.u):'—'}</td></tr>`).join('')||`<tr><td colspan="6" class="muted">${T('조건에 맞는 국가가 없습니다.','No matching country.')}</td></tr>`}
+  </tbody></table></div>${L.length>lim?`<button class="btn btn-sm" data-reg-more style="margin-top:10px">${T(`${L.length-lim}개국 더 보기`,`Show ${L.length-lim} more`)}</button>`:''}</div>`;
+}
+function vRegs(){
+  if(DMF.st==='idle')loadDMF();
+  const c=ctx();
+  const head=viewHead(T('국가별 규제 정보','Regulators by country'),T(`세계 120여 개국의 의약품 규제기관과 PIC/S(의약품실사상호협력기구) 가입, WHO 평가 현황입니다. 위쪽은 ${ttlProd()} 거래국, 아래쪽은 전체 국가입니다.`,`Medicines regulators, PIC/S membership and WHO status for 120+ countries. Partners for ${ttlProd()} first, then all countries.`));
+  const dmfBy={};if(DMF.st==='ok')DMF.rows.forEach(r=>r.c.forEach(k=>{const a=dmfA3(k);if(a)dmfBy[a]=(dmfBy[a]||0)+1}));
+  const all=(c.partners||[]);const lim=S.regPMore?all.length:30;const P=all.slice(0,lim);
+  const tot=all.reduce((t,p)=>t+p.share,0)||1;const picsVol=all.reduce((t,p)=>t+(regInfo(p.key).member?p.share:0),0),vac=/^3002(4|$)/.test(S.hs)||/^30024/.test(S.hs),need=vac?'백신':'의약품',whoOk=k=>{const r=regInfo(k);return (r.wla&&r.wla.includes(need))||(r.ml&&r.ml[1].includes(need))},whoVol=all.reduce((t,p)=>t+(REF.byA3[p.key]&&whoOk(p.key)?p.share:0),0);
+  const top=all.filter(p=>REF.byA3[p.key]&&!regInfo(p.key).member).sort((a,b)=>b.share-a.share)[0];
+  const ins=[];
+  if(all.length){ins.push(T(`현재 품목 ${flowWord()} 물량의 ${Math.round(picsVol/tot*100)}%가 PIC/S 회원국, ${Math.round(whoVol/tot*100)}%가 ${need} 분야 WHO 공인(WLA) 또는 성숙도 3·4 국가와의 거래입니다.`,`${Math.round(picsVol/tot*100)}% of volume is with PIC/S members and ${Math.round(whoVol/tot*100)}% with countries WHO-listed or ML3/4 for ${vac?'vaccines':'medicines'}.`));
+    if(top)ins.push(T(`PIC/S 비회원국 중 물량이 가장 큰 곳은 ${top.name}(${(top.share*100).toFixed(0)}%)입니다. GMP 근거 서류를 더 꼼꼼히 확인하세요.`,`Largest non-member partner: ${top.name} (${(top.share*100).toFixed(0)}%). Check GMP evidence closely.`))}
+  const tbl=all.length?`<div class="tbl-wrap"><table class="tbl"><thead><tr><th>${T('국가','Country')}</th><th class="r">${T('평균 단가','Avg price')} (USD${perU(c)})</th><th class="r">${T('물량 점유율','Share')}</th><th>${T('규제기관','Regulator')}</th><th>PIC/S</th><th>${T('WHO 평가','WHO status')}</th><th class="r">${T('한국 DMF 제조소','KR DMF sites')}</th></tr></thead><tbody>
+    ${P.map(p=>{const r=REF.byA3[p.key]?regInfo(p.key):{auth:'',eu:false};return `<tr><td><b>${esc(p.name)}</b></td><td class="r mono">${fUSD(p.u)}</td><td class="r mono">${(p.share*100).toFixed(1)}%</td><td class="small" style="max-width:340px;white-space:normal"><b>${esc(r.auth||'—')}${r.eu?' · EU (EMA)':''}</b>${regNote(p.key)?`<div class="hint" style="margin-top:4px;white-space:normal;min-width:240px">${esc(regNote(p.key))}</div>`:''}</td><td>${picsTag(p.key)}</td><td>${REF.byA3[p.key]?whoTag(p.key):'<span class="muted">—</span>'}</td><td class="r mono">${!REF.byA3[p.key]?'—':DMF.st==='ok'?(dmfBy[p.key]||0).toLocaleString():'…'}</td></tr>`}).join('')}</tbody></table></div>${all.length>lim?`<button class="btn btn-sm" data-reg-pmore style="margin-top:10px">${T(`거래국 ${all.length-lim}곳 더 보기`,`Show ${all.length-lim} more partners`)}</button>`:''}`:noData();
+  const fbtn=(k,l)=>`<button type="button" class="chipbtn" data-reg-f="${k}" aria-pressed="${(S.regF||'all')===k}">${l}</button>`;
+  return head+guide('regs')+(ins.length?`<div class="card"><div class="card-head"><h3>${T('요점','Key points')}</h3></div><ul class="ins">${ins.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:'')+
+  `<div class="card"><div class="card-head"><h3>${T(`거래국 규제 현황 (${all.filter(p=>REF.byA3[p.key]).length}개국${all.some(p=>!REF.byA3[p.key])?' + 국가 미상 지역':''})`,`Partner countries (${all.filter(p=>REF.byA3[p.key]).length}${all.some(p=>!REF.byA3[p.key])?' + unspecified areas':''})`)}</h3><span class="hint">${T('물량 순 · 한국 DMF 제조소 = 식약처에 등록된 그 나라 제조소 건수(전체 성분)','by volume · KR DMF sites = MFDS registrations with sites in that country (all ingredients)')}</span></div>${tbl}</div>
+  ${all.some(p=>EU27.has(p.key))?`<p class="hint">${T('EU 회원국(표에 EU (EMA) 표시): 의약품은 EMA 평가를 거쳐 EU 집행위원회가 내주는 중앙허가나 회원국 허가로 판매하며, 원료 품질은 보통 CEP(EDQM), ASMF, 또는 허가 서류 안의 원료 전체 자료로 뒷받침합니다.','EU members (marked EU (EMA)): medicines are authorised centrally (European Commission, on EMA\'s opinion) or nationally; API quality is usually supported by a CEP (EDQM), an ASMF, or full API data in the dossier.')}</p>`:''}
+  <div class="card"><div class="card-head"><h3>${T('전체 국가 규제 정보','All countries')}</h3><span class="hint">${T('현재 거래국 → 한국 DMF 제조소가 많은 순','partners first, then by KR DMF sites')}</span></div>
+    <div class="row" style="margin-bottom:12px"><div class="field" style="width:260px;max-width:100%"><label class="sr" for="reg-q">${T('국가·규제기관 검색','Search')}</label><input id="reg-q" class="input" autocomplete="off" placeholder="${T('국가·규제기관 검색 (예: 베트남, FDA)','Country or regulator (e.g. Vietnam, FDA)')}" value="${esc(S.regQ||'')}"></div>
+    <div class="chips">${fbtn('all',T('전체','All'))}${fbtn('trade',T('현재 거래국','Partners'))}${fbtn('pics',T('PIC/S 회원','PIC/S members'))}${fbtn('non',T('PIC/S 비회원','Non-members'))}${fbtn('who',T('WHO 공인·성숙도 3·4','WHO listed/ML3–4'))}</div></div>
+    ${regDirTable(c,dmfBy)}</div>
+  <div class="card"><div class="card-head"><h3>${T('표 읽는 법','How to read')}</h3></div><ul class="ins">
+    <li>${T('<b>PIC/S</b>: 의약품 GMP 실사 기준을 맞추는 국제 협력기구입니다. 가입 연도를 표시합니다.','<b>PIC/S</b>: international co-operation on GMP inspections; the year of accession is shown.')}</li>
+    <li>${T('<b>WLA</b>: WHO가 국제 기준을 충족한다고 공인한 규제기관(WHO Listed Authority)입니다. 의약품·백신 중 인정 범위를 함께 표시합니다.','<b>WLA</b>: WHO-Listed Authority, recognised by WHO as meeting international standards; scope shown.')}</li>
+    <li>${T('<b>ML3·ML4</b>: WHO 글로벌 벤치마킹 평가의 성숙도 단계입니다. ML3는 안정적으로 작동하는 규제 체계, ML4는 지속적으로 개선되는 최상위 단계입니다.','<b>ML3/ML4</b>: WHO Global Benchmarking maturity levels; ML3 is a stable, well-functioning system, ML4 the highest, continuously improving level.')}</li>
+    <li>${T('어느 표시도 없다고 규제가 약하다는 뜻은 아닙니다. 아직 평가를 받지 않았거나 다른 체계를 쓰는 나라일 수 있으니, 실제 등록·수입 요건은 현지 규정을 확인하세요.','No mark does not mean weak regulation; the country may not have been assessed. Check local rules for actual requirements.')}</li></ul></div>
+  <p class="hint">${T('출처: ','Sources: ')}<a href="https://picscheme.org/en/members" target="_blank" rel="noopener">PIC/S Members</a> (${PICS_DATE}), <a href="https://cdn.who.int/media/docs/default-source/medicines/regulatory-systems/wla/list_of_wla.pdf" target="_blank" rel="noopener">WHO-Listed Authorities</a> (${WHO_DATE.wla}), <a href="https://www.who.int/publications/m/item/list-of-nras-operating-at-ml3-and-ml4" target="_blank" rel="noopener">WHO ML3·ML4 list</a> (${WHO_DATE.ml}), <a href="https://www.data.go.kr/data/15057075/openapi.do" target="_blank" rel="noopener">${T('식약처 DMF 현황','MFDS DMF register')}</a>. ${T('규제기관 명칭은 각 기관 공식 명칭 기준입니다.','Regulator names follow each agency\'s official name.')}</p>`;
+}
+
+/* ================= competitors: finished-product permits (MFDS) ================= */
+const PERM={st:'idle'};
+async function loadPermits(){
+  if(PERM.st!=='idle')return;PERM.st='loading';
+  try{const r=await fetchT('data/permits.json',{},45000);if(!r.ok)throw new Error(r.status);const j=await r.json();
+    PERM.comp=j.comp;PERM.mat=j.mat;PERM.rows=j.rows;PERM.asof=j.asof;PERM.total=j.total;PERM.src=j.src;PERM.st='ok';
+  }catch(e){PERM.st='error'}
+  if(S.view==='rivals')render();
+}
+// English ingredient for a Korean DMF name (built from product names that mention it).
+const ingEn=k=>(DMF.en&&DMF.en[k])||'';
+const PERM_OK_EXTRA=/^(coated|powder|granules?|micro\w*|encapsulated|dc|d|c|\d+(\.\d+)?%?|mixture|premix|spray|dried|fine|direct|directly|compressible|compression|for|grade|form|crystals?|beads?|pellets?|solution|concentrate|ep|usp|bp|jp|kp)$/;
+function permRows(ing){
+  const E=ingEn(ing);if(!E||PERM.st!=='ok')return null;
+  PERM.cache=PERM.cache||{};if(PERM.cache[ing])return PERM.cache[ing];
+  const hit={};PERM.mat.forEach((m,i)=>{if(m===E){hit[i]=1;return}if(E.length>=6&&(' '+m+' ').includes(' '+E+' ')){const extra=(' '+m+' ').replace(' '+E+' ',' ').trim().split(' ').filter(Boolean);if(extra.every(w=>PERM_OK_EXTRA.test(w)))hit[i]=1}});
+  return PERM.cache[ing]=PERM.rows.filter(r=>r[2].some(x=>hit[x])).map(r=>({nm:r[0],co:PERM.comp[r[1]],mats:r[2].length,yr:r[3],etc:r[4]===1,st:r[5],kind:r[6],biz:r[7]}));
+}
+const PLABEL=()=>[T('정상','active'),T('유효기간 만료','expired'),T('취하','withdrawn'),T('취소·기타','cancelled/other')];
+function marketTab(ing,c,dmfIngRows){
+  if(PERM.st==='idle')loadPermits();
+  if(PERM.st!=='ok')return `<div class="card" aria-live="polite">${PERM.st==='error'?T('완제품 허가 자료를 불러오지 못했습니다. 새로고침해 주세요.','Could not load product permits. Please reload.'):T('식약처 완제품 허가 자료를 불러오는 중입니다…','Loading MFDS product permits…')}</div>`;
+  const all=permRows(ing);
+  if(!all)return `<div class="card empty">${ico('users',32)}<b>${T(`'${esc(ing)}'을(를) 완제품 허가 자료와 연결하지 못했습니다`,`Could not link '${esc(ing)}' to product permits`)}</b><span class="small">${T('성분 영문명을 찾지 못한 경우입니다. 원료 등록(DMF) 탭에서 등록 업체를 확인하세요.','No English ingredient name was found. See the DMF tab for registrants.')}</span></div>`;
+  const act=all.filter(r=>r.st===0);
+  if(!act.length)return `<div class="card empty"><b>${T('현재 유효한 완제품 허가가 없습니다','No active product permits')}</b><span class="small">${T(`과거 허가 ${all.length}건은 모두 만료·취하되었습니다.`,`All ${all.length} past permits have expired or been withdrawn.`)}</span></div>`;
+  const pBy={};(c.partners||[]).forEach(p=>pBy[p.key]=p);
+  // DMF links by business registration number
+  const cl=t=>String(t||'').replace(/주식회사|㈜|\(주\)|\(유\)|\s/g,'');
+  const dmfBy={};dmfIngRows.forEach(r=>{[r.biz?'b:'+r.biz:'',  'n:'+cl(r.e)].filter(Boolean).forEach(key=>{const x=dmfBy[key]||(dmfBy[key]={c:new Set(),m:new Set(),own:false});r.c.forEach(k=>x.c.add(k));x.m.add(r.m);
+    // own site listed: a site entry (comma-separated) naming the company, skipping starting-material/crude makers
+    String(r.m||'').split(',').forEach(site=>{if(/출발물질|조품|중간체/.test(site))return;if(cl(r.e).length>=2&&cl(site).includes(cl(r.e)))x.own=true})})});
+  const byC={};act.forEach(r=>{const key=r.biz?'b:'+r.biz:'n:'+cl(r.co);const x=byC[key]||(byC[key]={key,co:r.co,names:{},bizs:new Set(),n:0,single:0,etc:0,first:9999,last:0,prods:[]});x.names[r.co]=(x.names[r.co]||0)+1;if(r.biz)x.bizs.add(r.biz);x.n++;if(r.mats===1)x.single++;if(r.etc)x.etc++;x.first=Math.min(x.first,r.yr);x.last=Math.max(x.last,r.yr);x.prods.push(r)});
+  Object.values(byC).forEach(x=>{x.co=Object.entries(x.names).sort((a,b)=>b[1]-a[1])[0][0];x.dmf=[...x.bizs].map(b=>dmfBy['b:'+b]).find(Boolean)||dmfBy['n:'+cl(x.co)]||null});
+  const L=Object.values(byC).sort((a,b)=>b.n-a.n||a.first-b.first);const N=act.length;
+  const now=new Date().getFullYear();
+  const linked=ingLinked(S.hs,ing);
+  const est=x=>{if(!linked)return null;const d=x.dmf;if(!d)return null;const us=[...d.c].map(k=>{const a=dmfA3(k);return a&&pBy[a]&&isNum(pBy[a].u)?pBy[a].u:null}).filter(v=>v!=null);return us.length?{lo:Math.min(...us),hi:Math.max(...us)}:null};
+  const feats=x=>{const f=[],d=x.dmf;
+    if(d){f.push([T('자사 명의 DMF','DMF in own name'),'good']);if(d.c.size>1)f.push([T(`원료국 ${d.c.size}곳`,`${d.c.size} source countries`),'good']);if([...d.c].some(k=>{const a=dmfA3(k);return a&&regInfo(a).member}))f.push([T('PIC/S 국가 제조소 등록','PIC/S-country site'),'good']);if(d.own)f.push([T('자사 제조소 포함','Own site listed'),'neutral'])}
+    if(x.single/x.n>=.7)f.push([T('단일제 중심','Mostly single'),'neutral']);else if(x.single/x.n<=.3)f.push([T('복합제 중심','Mostly combos'),'neutral']);
+    if(x.etc/x.n>=.7)f.push([T('전문약 중심','Mostly Rx'),'neutral']);else if(x.etc/x.n<=.3)f.push([T('일반약 중심','Mostly OTC'),'neutral']);
+    if(x.first>now-5)f.push([T('최근 진입','New entrant'),'warn']);else if(x.first<=2000)f.push([T(`${x.first}년부터`,`Since ${x.first}`),'neutral']);
+    return f};
+  const top3=L.slice(0,3).reduce((t,x)=>t+x.n,0)/N,single=act.filter(r=>r.mats===1).length,etc=act.filter(r=>r.etc).length,recent=act.filter(r=>r.yr>now-5).length;
+  const withD=L.filter(x=>x.dmf),picsD=withD.filter(x=>[...x.dmf.c].some(k=>{const a=dmfA3(k);return a&&regInfo(a).member}));
+  const ests=L.map(x=>({x,e:est(x)})).filter(y=>y.e);
+  const ins=[];
+  ins.push(T(`유효 허가 ${N}개 품목을 ${L.length}개 업체가 갖고 있고, 허가 품목 수로 보면 상위 3곳 비중이 ${Math.round(top3*100)}%입니다(매출 기준 아님).`,`${N} active products held by ${L.length} companies; by permit count the top 3 hold ${Math.round(top3*100)}% (not sales).`));
+  ins.push(T(`단일제 ${single}개(${Math.round(single/N*100)}%) · 복합제 ${N-single}개, 전문약 ${etc}개(${Math.round(etc/N*100)}%) · 일반약 ${N-etc}개입니다.`,`${single} single-ingredient vs ${N-single} combination products; ${etc} Rx vs ${N-etc} OTC.`));
+  ins.push(T(`최근 5년(${now-4}~${now}년) 새로 허가된 품목은 ${recent}개입니다.${recent/N>=.25?' 신규 허가가 활발합니다.':''}`,`${recent} products were approved in ${now-4}–${now}.`));
+  if(withD.length)ins.push(T(`허가 보유 업체 중 ${withD.length}곳이 자사 명의로 이 원료를 식약처에 등록(DMF)했고, 그중 ${picsD.length}곳이 PIC/S 회원국 제조소를 등록했습니다. 나머지 업체는 다른 회사가 등록한 원료를 쓰는 것으로 보입니다.`,`${withD.length} product holders hold a DMF for this API in their own name; ${picsD.length} registered a site in a PIC/S member country. The rest appear to use APIs registered by others.`));
+  // differentiation ideas for the user's own company
+  const ideas=[];
+  if(withD.length>=3&&picsD.length/withD.length<.5)ideas.push(T(`자사 명의 DMF를 가진 경쟁사 ${withD.length}곳 중 ${withD.length-picsD.length}곳은 PIC/S 회원국 제조소가 없습니다. PIC/S·WHO 공인 국가 제조소 원료와 GMP 서류를 내세우면 품질로 차별화할 수 있습니다.`,`${withD.length-picsD.length} of ${withD.length} competitors with their own DMF have no PIC/S-country site; a PIC/S or WHO-listed source with full GMP evidence differentiates on quality.`));
+  if(withD.length>=3&&withD.filter(x=>x.dmf.c.size>1).length/withD.length<.4)ideas.push(T(`자사 명의 DMF를 가진 경쟁사 ${withD.length}곳 중 원료국이 2곳 이상인 곳은 ${withD.filter(x=>x.dmf.c.size>1).length?withD.filter(x=>x.dmf.c.size>1).length+'곳뿐입니다':'한 곳도 없습니다'}. 복수 공급처(이원화)로 공급 안정성을 강조할 수 있습니다.`,`Only ${withD.filter(x=>x.dmf.c.size>1).length} of ${withD.length} competitors with their own DMF have two or more source countries; dual sourcing is a supply-security message.`));
+  if(single/N<.3)ideas.push(T('허가 품목 수로 보면 단일제가 적습니다. 단일제나 고함량 제품으로 틈새를 노릴 수 있는지 시장 규모와 함께 검토하세요.','By permit count few products are single-ingredient; check whether a single-ingredient or high-strength product could fill a gap.'));
+  else if(single/N>.8)ideas.push(T('허가 품목 수로 보면 대부분 단일제입니다. 복합제나 개량신약(서방형 등)으로 차별화할 여지가 있습니다.','By permit count mostly single-ingredient; combinations or improved formulations (e.g. extended release) could differentiate.'));
+  if(etc/N>.8)ideas.push(T('전문약 위주 시장입니다. 병원 입찰·처방 영업에서는 원료 출처와 공급 안정성 자료가 설득 근거가 됩니다.','Mostly prescription products; source and supply-security evidence matters in hospital tenders.'));
+  else if(etc/N<.3)ideas.push(T('일반약 위주 시장입니다. 브랜드·제형(연질캡슐, 내복액 등)과 가격 경쟁력이 중요합니다.','Mostly OTC; brand, dosage form and price competitiveness matter.'));
+  if(top3>=.5)ideas.push(T('허가 품목이 상위 업체에 몰려 있습니다. 상위 업체의 원료 출처를 기준으로 가격 협상 목표를 잡으세요.','Permits are concentrated in a few holders; benchmark against the leaders\' sources.'));
+  if(ests.length>=2){const hi=ests.reduce((a,b)=>a.e.hi>b.e.hi?a:b);const lo2=Math.min(...ests.map(y=>y.e.lo));ideas.push(T(`경쟁사들이 등록한 원료 제조국의 평균 수입 단가는 ${lo2===hi.e.hi?fUSD(lo2):fUSD(lo2)+'~'+fUSD(hi.e.hi)}${perU(c)}입니다(HS 품목 평균). 우리 원료 견적이 이보다 낮으면 원가 경쟁력을 내세울 수 있습니다.`,`Average import prices of competitors' source countries: ${fUSD(lo2)}–${fUSD(hi.e.hi)}${perU(c)} (HS level); a quote below this is a cost advantage.`))}
+  const maxN=L[0].n,lim=S.compMore?L.length:15,sel=S.compSel&&byC[S.compSel];
+  const tag=([t,k])=>`<span class="tag t-${k}">${esc(t)}</span>`;
+  return `<div class="kpis">
+    <div class="kpi"><div class="k">${T('유효 허가 품목','Active products')}</div><div class="v">${N}</div><div class="s">${T(`전체 허가 이력 ${all.length}건`,`${all.length} permits ever`)}</div></div>
+    <div class="kpi"><div class="k">${T('허가 보유 업체','Product holders')}</div><div class="v">${L.length}</div><div class="s">${T(`상위 3곳 ${Math.round(top3*100)}%`,`top 3 hold ${Math.round(top3*100)}%`)}</div></div>
+    <div class="kpi"><div class="k">${T('단일제 · 전문약 비중','Single · Rx share')}</div><div class="v">${Math.round(single/N*100)}% · ${Math.round(etc/N*100)}%</div><div class="s">${T('나머지는 복합제 · 일반약','rest: combos · OTC')}</div></div>
+    <div class="kpi"><div class="k">${T('최근 5년 신규 허가','New in 5 years')}</div><div class="v">${recent}</div><div class="s">${T(`${now-4}~${now}년`,`${now-4}–${now}`)}</div></div>
+  </div>
+  <div class="cols-eq">
+    <div class="card"><div class="card-head"><h3>${T('시장 요약','Market summary')}</h3><span class="tag t-neutral">${T('자동 분석','auto')}</span></div><ul class="ins">${ins.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>
+    <div class="card" style="background:var(--brand-soft)"><div class="card-head"><h3>${T('차별화 포인트 아이디어','Differentiation ideas')}</h3></div>${ideas.length?`<ul class="ins">${ideas.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:`<p class="hint">${T('뚜렷한 틈새가 보이지 않습니다. 원료 출처와 공급 안정성 서류로 신뢰를 쌓는 전략이 무난합니다.','No clear gap; build trust with source and supply-security evidence.')}</p>`}</div>
+  </div>
+  <div class="card"><div class="card-head"><h3>${T('경쟁사 비교','Competitor comparison')}</h3><span class="hint">${T('점유율 = 유효 허가 품목 수 기준(매출 아님) · 행을 누르면 제품 목록','share = active products (not sales) · click a row for products')}</span></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>${T('업체','Company')}</th><th class="r">${T('품목 점유율','Product share')}</th><th class="r">${T('단일/복합','Single/combo')}</th><th class="r">${T('전문/일반','Rx/OTC')}</th><th class="r">${T('첫 허가','First')}</th><th>${T('자사 DMF·원료 제조국','Own DMF · source')}</th><th class="r">${T('원료국 평균 수입단가','Source-country avg price')}</th><th>${T('특징','Features')}</th></tr></thead><tbody>
+    ${L.slice(0,lim).map(x=>{const d=x.dmf,e=est(x);return `<tr class="click ${S.compSel===x.key?'on':''}" data-comp="${esc(x.key)}" tabindex="0" aria-expanded="${S.compSel===x.key}"><td><b>${esc(x.co)}</b></td><td class="r"><span class="bar-mini" style="width:${x.n/maxN*50}px"></span> <span class="mono">${x.n} · ${(x.n/N*100).toFixed(1)}%</span></td><td class="r mono">${x.single}/${x.n-x.single}</td><td class="r mono">${x.etc}/${x.n-x.etc}</td><td class="r mono">${x.first}</td><td class="small" style="white-space:normal;min-width:140px">${d?`${T('있음','yes')} · ${esc([...d.c].map(dmfCN).join(', '))}`:`<span class="muted">${T('자사 명의 DMF 없음','no DMF in own name')}</span>`}</td><td class="r mono">${e?(e.lo===e.hi?fUSD(e.lo):fUSD(e.lo)+'~'+fUSD(e.hi)):'—'}</td><td style="white-space:normal;min-width:200px"><span class="row" style="gap:4px">${feats(x).map(tag).join('')}</span></td></tr>`}).join('')}
+    </tbody></table></div>${!linked?`<p class="hint" style="margin-top:8px">${T(`원료국 평균 수입단가는 성분이 현재 품목(HS ${S.hs})에 속할 때만 보여줍니다. 위쪽 품목 검색에서 이 성분의 HS 코드를 고르면 함께 볼 수 있습니다.`,`Cost estimates appear only when the ingredient belongs to the current HS ${S.hs}; pick its HS code above to see them.`)}</p>`:''}${L.length>lim?`<button class="btn btn-sm" data-comp-more style="margin-top:10px">${T(`${L.length-lim}개 업체 더 보기`,`Show ${L.length-lim} more`)}</button>`:''}
+    ${sel?`<div class="card fade" style="margin-top:14px;background:var(--surface-2)"><div class="card-head"><h3>${esc(sel.co)} ${T('제품','products')} (${sel.n})</h3><button class="btn btn-sm btn-ghost" data-comp-close>${T('닫기','Close')}</button></div><div class="tbl-wrap"><table class="tbl" style="min-width:0"><thead><tr><th>${T('제품명','Product')}</th><th class="r">${T('허가 연도','Year')}</th><th>${T('구분','Type')}</th><th>${T('성분 수','Ingredients')}</th></tr></thead><tbody>${sel.prods.slice().sort((a,b)=>b.yr-a.yr).slice(0,30).map(r=>`<tr><td>${esc(r.nm)}</td><td class="r mono">${r.yr}</td><td>${r.etc?T('전문','Rx'):T('일반','OTC')}</td><td class="small">${r.mats===1?T('단일제','single'):T(`복합제(${r.mats}성분)`,`combo (${r.mats})`)}</td></tr>`).join('')}</tbody></table></div></div>`:''}
+  </div>
+  <p class="hint">${T('읽는 법: 점유율은 식약처에 허가된 유효 품목 수 기준이며 실제 판매량·매출 점유율이 아닙니다. 위탁생산 품목은 허가 보유 업체 기준으로 셉니다. 원료국 평균 수입단가는 그 업체가 식약처에 등록한 원료 제조국에서 들어온 이 HS 품목의 평균 수입 단가(현재 화면 통계)라서 같은 나라 원료를 쓰는 업체는 같은 값이 나오고, 실제 계약가와 다를 수 있습니다. DMF 등록이 실제 사용을 뜻하지는 않습니다. 경쟁사 완제품의 판매가·보험 약가는 이 자료에 없습니다. 출처: ','How to read: share counts active MFDS product permits, not sales. Contract-manufactured products count under the permit holder. The source-country price is the HS-level average import price from the company\'s registered source countries, so firms using the same country show the same value; a DMF registration does not prove use. Selling prices and reimbursement prices are not included. Source: ')}<a href="https://www.data.go.kr/data/15095677/openapi.do" target="_blank" rel="noopener">${esc(PERM.src)}</a> (${T('기준일','as of')} ${PERM.asof}, ${PERM.total.toLocaleString()}${T('건','')}), ${T('식약처 원료의약품 등록(DMF) 현황','MFDS DMF register')}.</p>`;
+}
+
 const PALETTE=['var(--c2)','var(--c3)','var(--c4)','var(--c1)'];
 function vTrend(){
   const c=ctx();if(!c.recs.length)return viewHead(T('추이 분석','Trends'),ttlProd())+noData();
   const big=c.partners.filter(p=>!p.small);
-  if(!S.trendSel||!S.trendSel.length||!S.trendSel.every(k=>c.partners.some(p=>p.key===k)))S.trendSel=big.slice(0,3).map(p=>p.key);
+  if(!S.trendSel||!S.trendSel.length||!S.trendSel.every(k=>c.partners.some(p=>p.key===k)))S.trendSel=(big.filter(p=>REF.byA3[p.key]).length?big.filter(p=>REF.byA3[p.key]):big).slice(0,3).map(p=>p.key);
   const sel=S.trendSel.map(k=>c.partners.find(p=>p.key===k)).filter(Boolean);
   const price=S.metric==='price';
   const ma=v=>v.map((x,i)=>{const w=v.slice(Math.max(0,i-2),i+1).filter(isNum);return w.length?sum(w)/w.length:NaN});
@@ -1465,25 +1805,25 @@ function vTrend(){
     r.tip=i=>`<div>${pl(c.periods[i])}</div>`+series.map(s=>`<div><span style="color:${s.color}">●</span> ${esc(s.name)} <b>${price?fUSD(s.vals[i]):fW(s.vals[i],c)}</b></div>`).join('');return r};
   const stats=series.map(s=>{const v=s.vals.filter(isNum);if(!v.length)return {s,min:NaN,max:NaN,m:NaN,cv:NaN,ch:NaN};const m=sum(v)/v.length;const sd=Math.sqrt(sum(v,x=>(x-m)**2)/v.length);return {s,min:Math.min(...v),max:Math.max(...v),m,cv:m?sd/m:NaN,ch:v.length>1?v[v.length-1]/v[0]-1:NaN}});
   const fv=v=>price?fUSD(v):fW(v,c);
-  const chipList=c.partners.slice(0,24);
+  const chipAll=c.partners.filter(p=>isNum(p.u)||p.w>0),chipList=S.trendAll?chipAll:chipAll.slice(0,24).concat(chipAll.slice(24).filter(p=>S.trendSel.includes(p.key)));
   return viewHead(T('추이 분석','Trends'),`${ttlProd()} · ${esc(repName())} ${flowWord()} · ${T('최대 4개국 비교','compare up to 4 countries')}`)+guide('trend')+
   `<div class="card"><div class="row" style="justify-content:space-between;align-items:flex-start">
     <div class="chips" role="group" aria-label="${T('비교할 국가','Countries')}">${chipList.map(p=>`<button type="button" class="chipbtn" data-tsel="${esc(p.key)}" aria-pressed="${S.trendSel.includes(p.key)}">${esc(p.name)}</button>`).join('')}</div>
     <div class="row"><div class="seg" role="group" aria-label="${T('지표','Metric')}"><button type="button" data-metric="price" aria-pressed="${price}">${T('단가','Price')}</button><button type="button" data-metric="vol" aria-pressed="${!price}">${T('물동량','Volume')}</button></div>
     <label class="row small" style="gap:6px;font-weight:700;min-height:44px"><input type="checkbox" id="t-ma" style="width:20px;height:20px" ${S.ma?'checked':''}> ${T('3기간 이동평균','3-period moving avg')}</label></div></div>
-    <p class="hint" style="margin-top:8px">${c.partners.length>24?T(`물량 상위 24개국만 버튼으로 보여줍니다. `,`Showing the top 24 partners by volume. `):''}${T('최소 1개, 최대 4개국을 고를 수 있습니다.','Pick 1 to 4 countries.')}</p>
+    <p class="hint" style="margin-top:8px">${chipAll.length>24?(S.trendAll?`<button type="button" class="btn btn-sm btn-ghost" data-tall="0">${T('물량 상위 24개국만 보기','Show top 24 only')}</button> `:`<button type="button" class="btn btn-sm" data-tall="1">${T(`나머지 ${chipAll.length-24}곳도 보기 (전체 ${chipAll.length}곳)`,`Show ${chipAll.length-24} more (${chipAll.length} in total)`)}</button> `):''}${T('최소 1개, 최대 4개국을 고를 수 있습니다.','Pick 1 to 4 countries.')}</p>
     <div class="legend" style="margin-top:12px">${series.map(s=>`<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('')}</div>
     <div style="margin-top:8px">${chartSlot('trend',350)}</div></div>
   <div class="tbl-wrap"><table class="tbl"><thead><tr><th>${T('구분','Series')}</th><th class="r">${T('평균','Mean')}</th><th class="r">${T('최저','Min')}</th><th class="r">${T('최고','Max')}</th><th class="r">${T('변동성 (CV)','Volatility (CV)')}</th><th class="r">${T('첫 기간 대비 마지막','First to last')}</th></tr></thead><tbody>
   ${stats.map(t=>`<tr><td><span style="color:${t.s.color}">●</span> <b>${esc(t.s.name)}</b></td><td class="r mono">${fv(t.m)}</td><td class="r mono">${fv(t.min)}</td><td class="r mono">${fv(t.max)}</td><td class="r"><span class="tag t-${t.cv>.12?'warn':'neutral'}">${isNum(t.cv)?(t.cv*100).toFixed(1)+'%':'—'}</span></td><td class="r mono">${fPct(t.ch)}</td></tr>`).join('')}
-  </tbody></table></div><p class="hint">${T('시장 전체 선은 싼 나라·비싼 나라의 물량 비중이 바뀌면 시세와 무관하게 움직일 수 있습니다. 시세 흐름은 나라별 선으로 확인하세요. 빈 구간은 그 달 거래가 없었다는 뜻입니다.','The market line can move when the mix of cheap and expensive origins changes, even if prices do not. Read price trends from the country lines. Gaps mean no trade in that period.')}</p>`;
+  </tbody></table></div><p class="hint">${T('시장 전체 선은 싼 나라·비싼 나라의 물량 비중이 바뀌면 시세와 무관하게 움직일 수 있습니다. 시세 흐름은 나라별 선으로 확인하세요. 빈 구간은 그 기간에 거래가 없었다는 뜻입니다.','The market line can move when the mix of cheap and expensive origins changes, even if prices do not. Read price trends from the country lines. Gaps mean no trade in that period.')}</p>`;
 }
 function vRoutes(){
   const c=ctx();if(!c.recs.length)return viewHead(T('교역 루트맵','Route map'),ttlProd())+noData();
   const W=REF.world.w,H=REF.world.h,lat0=REF.world.lat0,lat1=REF.world.lat1,buy=c.flow==='M';
   const P=(lat,lon)=>[(lon+180)/360*W,(lat0-clamp(lat,lat1,lat0))/(lat0-lat1)*H];
   const rep=repInfo();const K=P(rep.lat,rep.lon);
-  const ps=c.partners.filter(p=>REF.byA3[p.key]&&isNum(p.u)&&p.key!==rep.a3).slice(0,40);
+  const ps=c.partners.filter(p=>REF.byA3[p.key]&&isNum(p.u)&&p.key!==rep.a3);
   const unk=c.partners.filter(p=>!REF.byA3[p.key]);
   if(!S.mapSel||!ps.some(p=>p.key===S.mapSel)){const cands=ps.filter(p=>!p.small);S.mapSel=(cands.length?cands:ps).slice().sort((a,b)=>buy?a.u-b.u:b.u-a.u)[0];S.mapSel=S.mapSel&&S.mapSel.key}
   const bigs=ps.filter(p=>p.share>=.02);const best=bigs.length?bigs.reduce((a,b)=>buy?(a.u<b.u?a:b):(a.u>b.u?a:b)):null;
@@ -1514,8 +1854,8 @@ function vRoutes(){
   `<div class="cols">
     <div class="card" style="padding:16px">${ps.length?`<div class="map-wrap">${svg}</div>`:`<div class="empty">${T('위치를 아는 국가가 없어 루트를 그릴 수 없습니다.','No mappable countries.')}</div>`}
       <div class="legend" style="margin-top:12px"><span><i style="background:var(--c1)"></i>${T('평균보다 낮은 단가','Below average')}</span><span><i style="background:var(--c2)"></i>${T('평균보다 높은 단가','Above average')}</span><span>${T('흐린 선은 물량 0.5% 미만','faint = under 0.5% of volume')}</span></div>
-      <div class="chips" style="margin-top:12px" role="group" aria-label="${T('국가 선택','Select country')}">${ps.filter(p=>!p.small).slice(0,20).map(p=>`<button type="button" class="chipbtn" data-msel="${esc(p.key)}" aria-pressed="${S.mapSel===p.key}">${esc(p.name)} ${fUSD(p.u)}</button>`).join('')}</div>
-      ${c.partners.length>40?`<p class="hint" style="margin-top:10px">${T('물량 상위 40개국만 지도에 표시합니다.','Only the top 40 partners by volume are mapped.')}</p>`:''}
+      <div class="chips" style="margin-top:12px" role="group" aria-label="${T('국가 선택','Select country')}">${ps.filter(p=>S.mapAll||!p.small||p.key===S.mapSel).map(p=>`<button type="button" class="chipbtn" data-msel="${esc(p.key)}" aria-pressed="${S.mapSel===p.key}">${esc(p.name)} ${fUSD(p.u)}</button>`).join('')}</div>${ps.some(p=>p.small)?`<button type="button" class="btn btn-sm btn-ghost" data-mall="${S.mapAll?0:1}" style="margin-top:8px">${S.mapAll?T('소량 국가 숨기기','Hide small partners'):T(`소량 국가 ${ps.filter(p=>p.small).length}곳도 보기 (전체 ${ps.length}개국)`,`Show ${ps.filter(p=>p.small).length} small partners (${ps.length} in total)`)}</button>`:''}
+      ${''}
       ${unk.length?`<p class="hint" style="margin-top:6px">${T('위치 정보가 없어 빠진 곳','Not mapped')}: ${unk.slice(0,8).map(p=>esc(p.name)).join(', ')}</p>`:''}</div>
     <div style="display:flex;flex-direction:column;gap:20px">
       ${best?`<div class="card" style="background:var(--lime);border-color:var(--lime);color:var(--lime-ink)"><div class="small" style="font-weight:700">${buy?T('최저가 루트 (물량 2% 이상)','Cheapest route (≥2% volume)'):T('최고가 시장 (물량 2% 이상)','Best-priced market (≥2% volume)')}</div><div style="font-family:var(--f-display);font-size:23px;font-weight:800;margin-top:4px;line-height:1.35">${buy?`${esc(best.name)} → ${esc(repName())}`:`${esc(repName())} → ${esc(best.name)}`}<br><span class="mono" style="font-weight:500">${fUSD(best.u)}${perU(c)}</span></div><div class="small" style="margin-top:6px">${T('시장 중앙값 대비','vs median')} ${fPct(best.u/c.q.p50-1)} · ${T('점유율','share')} ${(best.share*100).toFixed(1)}%</div>${isPh(c.hs)?`<div class="small" style="margin-top:8px;opacity:.85">${T('같은 코드라도 나라마다 제품·등급이 다를 수 있습니다. 가격만 보고 공급처를 정하지 마세요.','Products and grades can differ by country under one code. Do not pick a source on price alone.')}</div>`:''}</div>`:''}
@@ -1550,7 +1890,7 @@ function vCopilot(){
   `<div class="cols-cop">
    <form class="card" id="cop-form" onsubmit="return false" style="display:flex;flex-direction:column;gap:16px">
      <div class="field"><span class="lbl">${T('협상 입장','Your role')}</span><div class="seg" role="group" aria-label="${T('협상 입장','Your role')}"><button type="button" data-flow="M" aria-pressed="${buy}">${T('사는 입장 · 수입','Buying · import')}</button><button type="button" data-flow="X" aria-pressed="${!buy}">${T('파는 입장 · 수출','Selling · export')}</button></div></div>
-     <div class="field"><label for="cp-country">${buy?T('공급사 국가','Supplier country'):T('바이어 국가','Buyer country')}</label>${sel('cp-country','country',[['',T('전체 시장과 비교','Compare with whole market')]].concat(c.partners.slice(0,80).map(p=>[p.key,`${p.name} · ${T('평균','avg')} ${fUSD(p.u)}${p.small?T(' (소량)',' (small)'):''}`])))}</div>
+     <div class="field"><label for="cp-country">${buy?T('공급사 국가','Supplier country'):T('바이어 국가','Buyer country')}</label>${sel('cp-country','country',[['',T('전체 시장과 비교','Compare with whole market')]].concat(c.partners.map(p=>[p.key,`${p.name} · ${T('평균','avg')} ${fUSD(p.u)}${p.small?T(' (소량)',' (small)'):''}`])))}</div>
      <div class="field"><label for="cp-price">${buy?T('공급사','Supplier'):T('바이어','Buyer')} ${T('제시 단가','offer price')}</label>
        <div style="display:grid;grid-template-columns:minmax(0,1fr) 96px 104px;gap:8px">${inp('cp-price','price',isNum(c.q.p50)?String(+toOffer(c.q.p50,o,R,c.basis).toFixed(curDec(o.cur,o.unit))):'')}${sel('cp-cur','cur',CURS.map(k=>[k,k]),T('통화','Currency'))}${sel('cp-unit','unit',unitOpts,T('단위','Unit'))}</div>
        <button type="button" class="btn btn-sm" data-cop-fill style="align-self:flex-start">${T('시장 중앙값 넣어보기','Try the market median')}</button></div>
@@ -1573,7 +1913,7 @@ function vCopilot(){
   </div>`;
 }
 function aiBox(){
-  if(!S.ai)return `<p class="hint" style="margin-top:10px">${T('AI 다듬기는 claude.ai 화면이나 API 키를 넣은 배포 버전에서 쓸 수 있습니다.','AI polishing works inside claude.ai or on a deployment with an API key.')}</p>`;
+  if(!S.ai)return `<p class="hint" style="margin-top:10px">${T('AI 다듬기는 claude.ai 화면이나 AI 기능을 켠 배포 사이트에서 쓸 수 있습니다.','AI polishing works inside claude.ai or on a deployment with an API key.')}</p>`;
   return `<div class="row" style="margin-top:12px;gap:8px"><span class="small" style="font-weight:700">${ico('spark',16)} ${T('AI로 다듬기','Polish with AI')}</span>${AI_MODES().map(([k,l])=>`<button type="button" class="btn btn-sm" data-ai="${k}">${l}</button>`).join('')}<button type="button" class="btn btn-sm btn-ghost" id="ai-revert" data-ai-revert hidden>${T('원문으로 되돌리기','Revert')}</button></div><p class="hint" id="ai-status" style="margin-top:8px" aria-live="polite">${T('AI는 문장만 바꾸고 숫자는 그대로 둡니다. 숫자가 바뀌면 경고합니다.','AI rewords only; the app warns if any number changes.')}</p>`;
 }
 function copOut(){
@@ -1589,7 +1929,7 @@ function copOut(){
     ${posBar(c,e)}
     <div class="legend" style="margin-top:24px"><span><i style="background:var(--c2)"></i>${T('제시가','Offer')}</span><span><i style="background:var(--ink)"></i>${T('시장 중앙값','Median')}</span><span><i style="background:var(--band);height:8px"></i>P25–P75</span>${e.pc?`<span><i style="background:var(--c3)"></i>${esc(e.pc.name)}</span>`:''}</div>
   </div>
-  ${/^29/.test(c.hs)?`<div class="row" style="gap:10px"><button type="button" class="chk" data-phon aria-pressed="${isPh(c.hs)}">${ico('check',14)}<span>${T('의약품 원료(API)로 보기','Treat as a pharmaceutical ingredient (API)')}</span></button><span class="hint">${T('켜면 등급·GMP·등록 서류 확인 항목과 의약품용 메일 문구를 씁니다.','Adds grade, GMP and registration checks and pharma wording to the email.')}</span></div>`:''}
+  ${/^29/.test(c.hs)?`<div class="row" style="gap:10px"><button type="button" class="chk" data-phon aria-pressed="${isPh(c.hs)}">${ico('check',14)}<span>${T('원료의약품(API) 기준으로 점검','Check as a pharmaceutical ingredient (API)')}</span></button><span class="hint">${T('켜면 등급·GMP·등록 서류 확인 항목과 의약품용 메일 문구를 씁니다.','Adds grade, GMP and registration checks and pharma wording to the email.')}</span></div>`:''}
   ${relCard(c,e.rel)}
   ${e.pc?mirrorCard(c,e.pc):''}
   ${isPh(c.hs)?chkCard(o,c):''}
@@ -1606,7 +1946,7 @@ function copOut(){
   <div class="card"><div class="card-head"><h3>${T('영문 회신 메일 초안','English reply draft')}</h3>
     <div class="row"><div class="seg" role="group" aria-label="${T('메일 어조','Tone')}"><button type="button" data-tone="polite" aria-pressed="${o.tone!=='firm'}">${T('정중하게','Polite')}</button><button type="button" data-tone="firm" aria-pressed="${o.tone==='firm'}">${T('단호하게','Firm')}</button></div>
     <button type="button" class="btn btn-sm" data-copy="mail">${ico('copy',16)}${T('복사','Copy')}</button></div></div>
-    <p class="hint" style="margin-bottom:10px">${e.atGoal?T('제시가가 이미 목표가 수준이라 수락하고 조건을 확인하는 메일입니다.','The offer already meets the target, so this accepts and confirms terms.'):T('정중하게는 목표가, 단호하게는 1차 제시가 한 가지 가격으로 재제안합니다. 범위를 보여주지 않아 상대가 높은 쪽에 맞추는 것을 막습니다.','Polite counters at the target, firm at the opening price. One figure only, so the other side cannot anchor on a range.')}${e.rel.lvl==='low'?' '+T('신뢰도가 낮아 메일에는 구체적 % 대신 시장 수준이라는 표현만 씁니다.','Reliability is low, so the email avoids exact percentages.'):''} ${T('[ ] 칸은 실제 값으로 바꿔 쓰세요.','Replace the [ ] placeholders.')}</p>
+    <p class="hint" style="margin-bottom:10px">${e.atGoal?T('제시가가 이미 목표가 수준이라 수락하고 조건을 확인하는 메일입니다.','The offer already meets the target, so this accepts and confirms terms.'):T('정중하게는 목표가, 단호하게는 1차 제시가 한 가지 가격으로 재제안합니다. 범위를 보여주지 않아 상대가 범위 중 자기에게 유리한 끝을 고르는 것을 막습니다.','Polite counters at the target, firm at the opening price. One figure only, so the other side cannot anchor on a range.')}${e.rel.lvl==='low'?' '+T('신뢰도가 낮아 메일에는 구체적 % 대신 시장 수준이라는 표현만 씁니다.','Reliability is low, so the email avoids exact percentages.'):''} ${T('[ ] 칸은 실제 값으로 바꿔 쓰세요.','Replace the [ ] placeholders.')}</p>
     <textarea id="mail" class="mail" aria-label="${T('영문 메일 초안','Email draft')}">${esc(mailNow)}</textarea>${aiBox()}${trBox(o,mailNow)}</div>
   <div class="card"><div class="card-head"><h3>${T('내부 보고 메모','Internal memo')}</h3><div class="row"><button type="button" class="btn btn-sm" data-copy="memo">${ico('copy',16)}${T('복사','Copy')}</button><button type="button" class="btn btn-sm btn-primary" data-save>${ico('save',16)}${T('협상 기록에 저장','Save to history')}</button></div></div>
     <textarea id="memo" class="mail" style="min-height:220px" aria-label="${T('내부 보고 메모','Memo')}">${esc(memoText(c,o,e))}</textarea></div>`;
@@ -1618,7 +1958,7 @@ function relCard(c,rl){const rs=rl.reasons;
     ${rs.length?`<ul class="rel">${rs.map(r=>`<li class="w${r.w}">${r.t}</li>`).join('')}</ul>`:`<p class="small" style="margin-top:8px">${T('표본이 충분하고 가격 폭이 좁아 비교에 무리가 없습니다.','Enough observations and a narrow spread.')}</p>`}
     ${c.estShare>0||S.exEst?`<button type="button" class="btn btn-sm" style="margin-top:10px" data-exest aria-pressed="${!!S.exEst}">${S.exEst?T(c.measure==='kg'?'추정 중량 다시 포함하기':'추정 수량 다시 포함하기','Include estimated weights'):T(c.measure==='kg'?'추정 중량 빼고 계산하기':'추정 수량 빼고 계산하기','Exclude estimated values')}</button>`:''}</div>`}
 function chkCard(o,c){const sel=chkSel(o,c.hs);
-  return `<div class="card"><div class="card-head"><h3>${T('가격 외 확인 항목','Non-price checks')}</h3><span class="hint">${T('고른 항목은 메일 서류 목록에 들어갑니다','Selected items go into the email')}</span></div>
+  return `<div class="card"><div class="card-head"><h3>${S.flow==='M'?T('가격 외 확인 항목','Non-price checks'):T('함께 제시할 품질·등록 서류','Quality and regulatory documents to offer')}</h3><div class="row" style="gap:6px"><span class="hint">${S.flow==='M'?T('고른 항목은 메일의 요청 서류 목록에 들어갑니다','Selected items go into the email as requests'):T('고른 항목은 수락 메일에 "제공 가능한 서류"로 들어갑니다','Selected items go into the acceptance email as documents you provide')}</span><button type="button" class="btn btn-sm btn-ghost" data-view="rivals">${ico('users',16)}${T('이 원료의 경쟁사·제조소','Competitors for this API')}</button></div></div>
     <div class="chks">${PH_CHK().map(([k,l])=>`<button type="button" class="chk" data-chk="${k}" aria-pressed="${sel.includes(k)}">${ico('check',14)}<span>${l}</span></button>`).join('')}</div>
     <p class="hint" style="margin-top:10px">${T('통관 단가에는 이런 조건 차이가 드러나지 않습니다. 가격이 유난히 낮은 견적일수록 이 항목들을 먼저 확인하세요.','Customs unit values do not show these differences. The lower a quote, the more these checks matter.')}</p></div>`}
 function defaultQuotes(c){
@@ -1634,7 +1974,7 @@ function vQuotes(){
   const unitOpts=c.measure==='kg'?[['kg','/kg'],['g','/g']]:[['kg','/'+c.unit]];
   const rows=Q.map((q,i)=>`<tr>
     <td><label class="sr" for="q-name-${i}">${i+1} name</label><input id="q-name-${i}" class="input" data-q="${i}" data-qk="name" value="${esc(q.name)}" style="width:120px"></td>
-    <td><label class="sr" for="q-country-${i}">${i+1} country</label><select id="q-country-${i}" class="select" data-q="${i}" data-qk="country" style="width:140px">${opt([['',T('국가 모름','Unknown')]].concat(c.partners.slice(0,80).map(p=>[p.key,p.name])),q.country)}</select></td>
+    <td><label class="sr" for="q-country-${i}">${i+1} country</label><select id="q-country-${i}" class="select" data-q="${i}" data-qk="country" style="width:140px">${opt([['',T('국가 모름','Unknown')]].concat(c.partners.map(p=>[p.key,p.name])),q.country)}</select></td>
     <td><label class="sr" for="q-price-${i}">${i+1} price</label><input id="q-price-${i}" class="input mono" data-q="${i}" data-qk="price" inputmode="decimal" value="${esc(q.price)}" style="width:120px"></td>
     <td><label class="sr" for="q-cur-${i}">${i+1} currency</label><select id="q-cur-${i}" class="select" data-q="${i}" data-qk="cur" style="width:86px">${opt(CURS.map(k=>[k,k]),q.cur)}</select></td>
     <td><label class="sr" for="q-unit-${i}">${i+1} unit</label><select id="q-unit-${i}" class="select" data-q="${i}" data-qk="unit" style="width:96px">${opt(unitOpts,q.unit)}</select></td>
@@ -1644,7 +1984,7 @@ function vQuotes(){
   const R=rates(S.cop);
   return viewHead(T('견적 비교','Quote comparison'),`${ttlProd()} · ${buy?T('공급사 견적','supplier quotes'):T('바이어 제시가','buyer offers')} → ${c.basis}`)+guide('quotes')+
   `<div class="card"><div class="card-head"><h3>${T('견적 입력','Quotes')}</h3><div class="row"><button class="btn btn-sm" data-qadd ${Q.length>=8?'disabled':''}>${ico('plus',16)}${T('견적 추가','Add quote')}</button><button class="btn btn-sm btn-ghost" data-qreset>${T('예시로 되돌리기','Reset to example')}</button></div></div>
-    <div class="tbl-wrap"><table class="tbl qtbl"><thead><tr><th>${buy?T('공급사','Supplier'):T('바이어','Buyer')}</th><th>${T('국가','Country')}</th><th>${T('가격','Price')}</th><th>${T('통화','Currency')}</th><th>${T('단위','Unit')}</th><th>${T('조건','Terms')}</th><th>${T('결제(일, 선급은 −)','Pay days (advance −)')}</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="tbl-wrap"><table class="tbl qtbl"><thead><tr><th>${buy?T('공급사','Supplier'):T('바이어','Buyer')}</th><th>${T('국가','Country')}</th><th>${T('가격','Price')}</th><th>${T('통화','Currency')}</th><th>${T('단위','Unit')}</th><th>${T('조건','Terms')}</th><th>${T('결제 기간(일, 선급은 음수)','Payment days (advance = negative)')}</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
     <div class="row" style="margin-top:12px;gap:8px"><label for="q-rate" class="small" style="font-weight:700">${T('결제 기간 할인율 (연 %)','Discount rate for payment days (% p.a.)')}</label><input id="q-rate" class="input mono" inputmode="decimal" value="${esc(S.qrate)}" style="width:90px"></div>
     <p class="hint" style="margin-top:10px">${T(`환율·운임 가정은 협상 코파일럿 설정을 씁니다 (USD/KRW ${R.fx.toLocaleString()}, EUR/USD ${R.eur}, 운임 ${R.frm==='abs'?'$'+fP(R.fa)+perU(c):(R.fr*100).toFixed(1)+'%'}). 예시 견적은 실제 견적이 아닙니다. CNY·JPY·INR·CHF·GBP는 ${S.fx?'ExchangeRate-API 최신':FX_DEF_DATE+' 기준'} 환율을 씁니다.`,`Uses the copilot's FX and freight assumptions (USD/KRW ${R.fx.toLocaleString()}, EUR/USD ${R.eur}, freight ${R.frm==='abs'?'$'+fP(R.fa)+perU(c):(R.fr*100).toFixed(1)+'%'}). Example quotes are not real. CNY, JPY, INR, CHF and GBP use ${S.fx?'the latest ExchangeRate-API':FX_DEF_DATE} rates.`)}${S.fx?' <a href="https://www.exchangerate-api.com" target="_blank" rel="noopener">Rates By Exchange Rate API</a>':''}</p></div>
   <div id="q-out">${qOut()}</div>`;
@@ -1657,15 +1997,15 @@ function qOut(){
   if(!ok.length)return `<div class="card empty"><b>${T('비교할 견적이 없습니다','No quotes to compare')}</b><span class="small">${T('가격 칸에 0보다 큰 숫자를 넣어 주세요.','Enter a price above 0.')}</span></div>`;
   const bestI=ok[0].i,rankOf={};ok.forEach((x,k)=>rankOf[x.i]=k+1);
   const gap=ok.length>1?Math.abs(ok[ok.length-1].pv/ok[0].pv-1):NaN;
-  return `<div class="card fade"><div class="card-head"><h3>${T('비교 결과','Results')}</h3>${ok.length>1?`<span class="tag t-lime">${buy?T('최저가','Lowest'):T('최고가','Highest')} ${esc(ok[0].q.name)} · ${T('최하위와','vs last')} ${(gap*100).toFixed(1)}%</span>`:''}</div>
+  return `<div class="card fade"><div class="card-head"><h3>${T('비교 결과','Results')}</h3>${ok.length>1?`<span class="tag t-lime">${buy?T('최저가','Lowest'):T('최고가','Highest')} ${esc(ok[0].q.name)} · ${T('최하위 견적과 차이','gap to last')} ${(gap*100).toFixed(1)}%</span>`:''}</div>
    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>#</th><th>${buy?T('공급사','Supplier'):T('바이어','Buyer')}</th><th class="r">${T('입력 가격','Entered')}</th><th class="r">${c.basis}</th><th class="r">${T('결제 반영','Payment-adjusted')}</th><th class="r">${T('시장 중앙값 대비','vs median')}</th><th class="r">${T('해당국 평균 대비','vs country')}</th><th>${T('판정','Verdict')}</th><th></th></tr></thead><tbody>
-   ${ev.map(x=>x.e?`<tr class="${x.i===bestI?'best':''}"><td class="mono">${rankOf[x.i]}</td><td><b>${esc(x.q.name)}</b><div class="hint">${x.e.pc?esc(x.e.pc.name):T('국가 미지정','No country')}</div></td><td class="r mono">${fmtCur(x.e.price,x.o,c)} ${x.o.inc}</td><td class="r mono">${fUSD(x.e.norm)}</td><td class="r mono">${fUSD(x.pv)}<div class="hint">${x.days}${T('일','d')}</div></td><td class="r mono">${fPct(x.e.diff)}</td><td class="r mono">${x.e.pc?fPct(x.e.pcDiff):'—'}</td><td><span class="tag t-${x.e.tone}">${x.e.short}</span></td><td><button class="btn btn-sm" data-qcop="${x.i}">${T('협상','Negotiate')} ${ico('arrow',14)}</button></td></tr>`:`<tr><td>—</td><td><b>${esc(x.q.name)}</b></td><td colspan="7" class="muted">${T('가격을 0보다 큰 숫자로 넣어 주세요','Enter a price above 0')}</td></tr>`).join('')}
+   ${ev.map(x=>x.e?`<tr class="${x.i===bestI?'best':''}"><td class="mono">${rankOf[x.i]}</td><td><b>${esc(x.q.name)}</b><div class="hint">${x.e.pc?esc(x.e.pc.name):T('국가 미지정','No country')}</div></td><td class="r mono">${fmtCur(x.e.price,x.o,c)} ${x.o.inc}</td><td class="r mono">${fUSD(x.e.norm)}</td><td class="r mono">${fUSD(x.pv)}<div class="hint">${x.days}${T('일','d')}</div></td><td class="r mono">${fPct(x.e.diff)}</td><td class="r mono">${x.e.pc?fPct(x.e.pcDiff):'—'}</td><td><span class="tag t-${x.e.tone}">${x.e.short}</span></td><td><button class="btn btn-sm" data-qcop="${x.i}">${T('코파일럿에서 점검','Check in copilot')} ${ico('arrow',14)}</button></td></tr>`:`<tr><td>—</td><td><b>${esc(x.q.name)}</b></td><td colspan="7" class="muted">${T('가격을 0보다 큰 숫자로 넣어 주세요','Enter a price above 0')}</td></tr>`).join('')}
    </tbody></table></div>
    <p class="hint" style="margin-top:12px">${T('결제 기간은 연 이자율로 상품 대금에만 할인해 반영했습니다(선급은 −일로 넣기). 납기와 등급·GMP·등록 상태 차이는 반영되지 않으니, 규격이 같은 견적끼리 비교하세요. 최저가가 곧 최선은 아닙니다.','Payment days discount the goods price at the annual rate (enter advance payment as negative days). Lead time and grade/GMP/registration differences are not reflected, so compare like for like. Lowest is not automatically best.')}</p></div>`;
 }
 function vMargin(){
   const c=ctx('X',S.n),o=S.mg;
-  if(!c.recs.length)return viewHead(T('수출 마진 계산기','Export margin'),ttlProd())+noData();
+  if(!c.recs.length)return viewHead(T('수출 마진 계산기','Export margin'),ttlProd())+noData('X');
   const mk=[S.src,S.reporter,S.hs,c.measure].join('|');
   if(o.hs!==mk){o.cost='';o.pack='';o.country='';o.hs=mk}
   if(!o.country||!c.partners.some(p=>p.key===o.country))o.country=(c.partners.find(p=>!p.small)||c.partners[0]).key;
@@ -1675,7 +2015,7 @@ function vMargin(){
   const inp=(id,key,ph)=>`<input id="${id}" class="input" data-mg-in="${key}" inputmode="decimal" autocomplete="off" placeholder="${esc(ph)}" value="${esc(o[key])}">`;
   return viewHead(T('수출 마진 계산기','Export margin calculator'),`${ttlProd()} · ${esc(repName())} ${T('수출 통계(FOB) 기준','export statistics (FOB)')}`)+guide('margin')+
   `<div class="cols-cop"><form class="card" onsubmit="return false" style="display:flex;flex-direction:column;gap:16px">
-    <div class="field"><label for="mg-country">${T('수출 대상국','Destination')}</label><select id="mg-country" class="select" data-mg-in="country">${c.partners.slice(0,80).map(p=>`<option value="${esc(p.key)}" ${o.country===p.key?'selected':''}>${esc(p.name)} · ${T('평균','avg')} ${fUSD(p.u)}${perU(c)}${p.small?T(' (소량)',' (small)'):''}</option>`).join('')}</select></div>
+    <div class="field"><label for="mg-country">${T('수출 대상국','Destination')}</label><select id="mg-country" class="select" data-mg-in="country">${c.partners.map(p=>`<option value="${esc(p.key)}" ${o.country===p.key?'selected':''}>${esc(p.name)} · ${T('평균','avg')} ${fUSD(p.u)}${perU(c)}${p.small?T(' (소량)',' (small)'):''}</option>`).join('')}</select></div>
     <div class="grid2"><div class="field"><label for="mg-cost">${T('제조원가','Unit cost')} (₩${perU(c)})</label>${inp('mg-cost','cost','')}</div><div class="field"><label for="mg-pack">${T('포장·국내물류','Packing & domestic')} (₩${perU(c)})</label>${inp('mg-pack','pack','')}</div></div>
     <div class="grid2"><div class="field"><label for="mg-margin">${T('목표 마진 (판매가 대비 %)','Target margin (% of price)')}</label>${inp('mg-margin','margin','25')}</div><div class="field"><label for="mg-fx">USD/KRW</label>${inp('mg-fx','fx',String(DEF.fx))}</div></div>
     <div class="field"><span class="lbl">${T('견적 조건','Quote terms')}</span><div class="seg" role="group" aria-label="${T('견적 조건','Terms')}"><button type="button" data-mginc="FOB" aria-pressed="${o.inc==='FOB'}">FOB</button><button type="button" data-mginc="CIF" aria-pressed="${o.inc==='CIF'}">CIF</button></div></div>
@@ -1687,7 +2027,7 @@ function vMargin(){
 function mgOut(){
   const c=ctx('X',S.n),o=S.mg;const p=c.partners.find(x=>x.key===o.country);if(!p)return '';
   const fxv=n(o.fx,NaN),mv=n(o.margin,NaN),cost=n(o.cost,NaN),pack=n(o.pack,0);
-  const errs=[];if(!(fxv>0))errs.push(T('환율은 0보다 커야 합니다','FX must be above 0'));if(!(cost>0))errs.push(T('제조원가는 0보다 커야 합니다','Cost must be above 0'));if(!(mv>=0&&mv<95))errs.push(T('목표 마진은 0 이상 95 미만이어야 합니다','Margin must be 0–94'));if(pack<0)errs.push(T('포장·물류비는 0 이상이어야 합니다','Packing cost must be ≥ 0'));
+  const errs=[];if(!(fxv>0))errs.push(T('환율은 0보다 커야 합니다','FX must be above 0'));if(!(cost>0))errs.push(T('제조원가는 0보다 커야 합니다','Cost must be above 0'));if(!(mv>=0&&mv<95))errs.push(T('목표 마진은 0 이상 95 미만이어야 합니다','Margin must be 0 to under 95'));if(pack<0)errs.push(T('포장·물류비는 0 이상이어야 합니다','Packing cost must be ≥ 0'));
   if(errs.length)return `<div class="card empty"><b>${T('입력값을 확인하세요','Check your inputs')}</b><span class="small">${errs.join(' · ')}</span></div>`;
   const fx=fxv,m=mv/100,costFOB=(cost+pack)/fx,tFOB=costFOB/(1-m),mkt=p.u,mm=(mkt-costFOB)/mkt,diff=tFOB/mkt-1;
   const fr=Math.max(0,n(o.freight,0)),ins=Math.max(0,n(o.ins,0))/100,quote=o.inc==='CIF'?(tFOB+fr)/(1-1.1*Math.min(ins,.5)):tFOB;
@@ -1705,7 +2045,7 @@ function mgOut(){
     <div class="kpi"><div class="k">${T('손익분기 (FOB)','Break-even (FOB)')}</div><div class="v">${fUSD(costFOB)}</div><div class="s">${fKRW(cost+pack)}${perU(c)} ÷ FX</div></div>
     <div class="kpi"><div class="k">${T('시장가로 팔 때 마진','Margin at market price')}</div><div class="v" style="color:var(--${mm<0?'bad':mm<m?'warn':'good'})">${(mm*100).toFixed(1)}%</div><div class="s">${esc(p.name)} ${fUSD(mkt)}</div></div>
     <div class="kpi"><div class="k">${esc(p.name)} P25–P75</div><div class="v" style="font-size:21px">${fUSD(p25)}–${fUSD(p75)}</div><div class="s">${T('협상 가능 구간','negotiable range')}</div></div>
-    <div class="kpi"><div class="k">${T('환율 1% 하락 시 마진','Margin if KRW +1%')}</div><div class="v">${(m1*100).toFixed(1)}%</div><div class="s">${T('원화 강세 영향','won strengthens')}</div></div>
+    <div class="kpi"><div class="k">${T('환율 1% 하락 시 마진','Margin if KRW strengthens 1%')}</div><div class="v">${(m1*100).toFixed(1)}%</div><div class="s">${T('원화 강세 영향','won strengthens')}</div></div>
   </div>`;
 }
 function vHistory(){
@@ -1723,10 +2063,17 @@ function datasetCSV(){const recs=srcRecs();const H=['period','reporter','partner
   return [H.join(',')].concat(recs.map(r=>[r.period,repInfo().a3,r.p,cEn(r.p,r.nm),r.hs,r.flow,Math.round(r.v),r.kg!=null?r.kg:'',r.q!=null?r.q:'',r.qu||'',r.b||'',r.est?'yes':''].map(csvCell).join(','))).join('\n')}
 function vData(){
   const di=dsInfo();const recs=srcRecs();const imp=S.imp;
-  const liveDesc=S.api==='proxy'?T('배포 서버를 통해 UN Comtrade에 연결되어 있습니다.','Connected to UN Comtrade through the deployment server.'):S.api==='direct'?T('브라우저에서 UN Comtrade에 직접 연결되어 있습니다.','Connected directly to UN Comtrade.'):T('이 화면에서는 외부 데이터 접속이 막혀 있습니다. GitHub·Vercel로 배포한 버전에서 쓸 수 있습니다.','External data is blocked here. Available in the deployed (GitHub + Vercel) version.');
-  return viewHead(T('데이터 관리','Data sources'),T('어떤 데이터로 계산할지 고르고, 현재 데이터를 확인하거나 CSV를 올립니다.','Choose the data source, review it, or upload a CSV.'))+
+  const liveDesc=S.api==='proxy'?T('배포 서버를 통해 UN Comtrade에 연결되어 있습니다.','Connected to UN Comtrade through the deployment server.'):S.api==='direct'?T('브라우저에서 UN Comtrade에 직접 연결되어 있습니다.','Connected directly to UN Comtrade.'):T('이 미리보기 화면에서는 외부 데이터 접속이 막혀 있습니다. 정식 배포된 사이트에서 쓸 수 있습니다.','External data is blocked here. Available in the deployed (GitHub + Vercel) version.');
+  return viewHead(T('데이터 관리','Data sources'),T('어떤 데이터로 계산할지 고르고, 현재 데이터를 확인하거나 CSV를 올립니다.','Choose the data source, review it, or upload a CSV.'))+`<div class="card"><div class="card-head"><h3>${T('이 사이트가 쓰는 공식 데이터','Official data used here')}</h3><span class="hint">${T('모두 정부·국제기구 공개 자료입니다','all public government or international sources')}</span></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>${T('출처','Source')}</th><th>${T('무엇에 쓰나요','Used for')}</th><th>${T('범위','Coverage')}</th></tr></thead><tbody>
+    <tr><td><b>UN Comtrade</b> <span class="tag t-neutral">${T('직접 조회','direct')}</span></td><td>${T('국가별 수출입 단가·물량 (모든 분석 화면)','Prices and volumes by country (all analysis screens)')}</td><td class="small">${T('HS 6자리 · 200여 개 보고국','HS 6-digit · 200+ reporters')}</td></tr>
+    <tr><td><b>${T('관세청 수출입무역통계','Korea Customs trade statistics')}</b> <span class="tag t-good">${T('추천','recommended')}</span></td><td>${T('한국 수출입을 HSK 10단위로 더 정확하게 분석 (아래 CSV 불러오기)','More precise Korean data at HSK 10-digit (upload below)')}</td><td class="small"><a href="https://tradedata.go.kr" target="_blank" rel="noopener">tradedata.go.kr</a> · ${T('UN Comtrade보다 최신','fresher than UN Comtrade')}</td></tr>
+    <tr><td><b>${T('식약처 원료의약품 등록(DMF) 현황','MFDS DMF register')}</b></td><td>${T('원료별 국내 등록 업체와 해외 제조소','Korean registrants and sites per API')} <button class="btn btn-sm btn-ghost" data-view="rivals">${T('보기','Open')} ${ico('arrow',14)}</button></td><td class="small"><a href="https://www.data.go.kr/data/15057075/openapi.do" target="_blank" rel="noopener">${T('공공데이터포털','data.go.kr')}</a> · ${T('9,000여 건','9,000+ records')}</td></tr>
+    <tr><td><b>PIC/S</b></td><td>${T('거래국 규제기관과 PIC/S(GMP 실사 협력) 가입·WHO 평가','Partner regulators, PIC/S (GMP inspection co-operation) and WHO status')} <button class="btn btn-sm btn-ghost" data-view="regs">${T('보기','Open')} ${ico('arrow',14)}</button></td><td class="small"><a href="https://picscheme.org/en/members" target="_blank" rel="noopener">picscheme.org</a></td></tr>
+    <tr><td><b>ExchangeRate-API</b></td><td>${T('환율 (견적·코파일럿 환산)','FX rates for conversions')}</td><td class="small">${T('매일 갱신','daily')}</td></tr>
+    </tbody></table></div></div>`+
   `<div class="srcs" role="group" aria-label="${T('데이터 출처','Data source')}">
-    <button data-src="live" aria-pressed="${S.src==='live'}" ${S.api?'':'disabled'}><b>${ico('refresh',16)} ${T('UN Comtrade 실시간','UN Comtrade live')}</b><span class="small muted">${liveDesc}</span></button>
+    <button data-src="live" aria-pressed="${S.src==='live'}" ${S.api?'':'disabled'}><b>${ico('refresh',16)} ${T('UN Comtrade 직접 조회','UN Comtrade (direct)')}</b><span class="small muted">${liveDesc}</span></button>
     <button data-src="csv" aria-pressed="${S.src==='csv'}" ${S.csv?'':'disabled'}><b>${ico('up',16)} ${T('업로드한 CSV','Uploaded CSV')}</b><span class="small muted">${S.csv?esc(S.csv.label)+' · '+esc(S.csv.detail):T('아래에서 파일을 올리면 고를 수 있습니다.','Upload a file below to enable.')}</span></button>
     <button data-src="sample" aria-pressed="${S.src==='sample'}"><b>${ico('data',16)} ${T('예시 데이터','Sample data')}</b><span class="small muted">${T('HS 2936·2941·3002·3004, 한국 보고, 가상 수치','HS 2936/2941/3002/3004, Korea, simulated')}</span></button>
   </div>
@@ -1775,13 +2122,15 @@ function impResult(imp){
 }
 function vMethod(){
   const items=[[T('단가','Unit price'),T('국가별 평균 단가 = 선택 기간의 신고금액 합 ÷ 순중량(또는 보조 수량) 합. 월별 단가를 단순 평균하지 않아 물량이 큰 달이 더 크게 반영됩니다. 중량이 없는 행은 단가 계산에서 빠집니다.','Average price = total declared value ÷ total net weight (or supplementary quantity). Rows without weight are excluded.')],
-    [T('값의 기준','Valuation'),T('UN Comtrade 자료는 수입은 CIF 금액(없으면 FOB), 수출은 FOB 금액을 씁니다. 수입을 FOB로만 보고하는 나라는 자동으로 FOB 기준이 됩니다. 운송 수단은 구분하지 않고 전체(해상·항공 등 합계)를 씁니다.','Imports use the CIF value (FOB if missing), exports FOB. Reporters that only give FOB import values switch to FOB automatically. All modes of transport are combined.')],
+    [T('값의 기준','Valuation'),T('UN Comtrade 자료는 수입은 CIF 금액(없으면 FOB), 수출은 FOB 금액을 씁니다. 수입을 FOB로만 보고하는 나라는 자동으로 FOB 기준이 됩니다. 기본은 운송 수단 전체(해상·항공 등 합계)이며, 운송 수단별 자료를 내는 보고국(독일 등)은 상단에서 항공·해상을 고를 수 있습니다.','Imports use the CIF value (FOB if missing), exports FOB. Reporters that only give FOB import values switch to FOB automatically. All modes of transport are combined.')],
     [T('시장 분포','Distribution'),T('국가×기간 단가를 물량으로 가중해 P10·P25·중앙값·P75·P90을 구합니다. 판정의 위치(%)는 제시가 이하에서 거래된 물량 비율입니다.','Partner × period prices weighted by volume give P10–P90. Position (%) is the share of volume at or below the offer.')],
     [T('판정·제안 가격','Verdict & targets'),T('제시가는 시장 중앙값과 비교해 %로 보여줍니다. 의약품 단가는 고가 제품 몇 건이 평균을 끌어올리는 경우가 많아, 평균보다 중앙값이 실제 거래 수준을 더 잘 나타냅니다. 판정은 제시가 이하에서 거래된 물량 비율로 정합니다. 사는 입장: 25% 이하 매우 유리 … 90% 초과 매우 불리. 1차 제시가 P25, 목표 중앙값, 상한 P75. 파는 입장은 반대입니다.','The offer is shown as % versus the market median. For medicines a few high-priced products often pull the average up, so the median reflects typical trades better. The verdict uses the share of volume traded at or below the offer. Buying: ≤25% very favorable … >90% very unfavorable; opening P25, target median, ceiling P75. Selling is reversed.')],
     [T('상대국 통계 교차 확인','Mirror check'),T('국가별 단가에서 나라를 누르거나 협상 코파일럿에서 상대국을 고르면, 같은 거래를 상대국이 신고한 통계와 비교할 수 있습니다. 수입(CIF)과 상대국 수출(FOB)의 단가 비율이 0.9~1.25배면 운임·보험료 차이 범위로 보고 "두 통계가 맞음"으로, 벗어나면 신고 시점·분류·이전가격 차이 가능성을 경고합니다.','Click a country in Countries, or pick a counterpart in the copilot, to compare with the partner\'s own report of the same trade. A CIF/FOB ratio of 0.9–1.25 is treated as consistent (freight and insurance); outside that range the app warns about timing, classification or transfer-pricing differences.')],
-    [T('COMTRADE_KEY를 넣으면','With a COMTRADE_KEY'),T('정식 API로 한 번에 최대 12개 기간·10만 행을 받아 조회 횟수가 약 12분의 1로 줄고, 500행 제한이 사라집니다. 운송 수단별 자료를 내는 보고국(독일 등 일부 국가)은 상단에 항공·해상·육상 선택이 나타납니다. 한국은 UN Comtrade에 운송 수단별 자료를 내지 않습니다.','The official API returns up to 12 periods and 100,000 rows per call, cutting calls about 12× and removing the 500-row limit. Reporters that publish transport-mode breakdowns (e.g. Germany) get an air/sea/land selector. Korea does not publish this breakdown to UN Comtrade.')],
+    [T('관리자용: COMTRADE_KEY를 넣으면','For admins: with a COMTRADE_KEY'),T('정식 API로 한 번에 최대 12개 기간·10만 행을 받아 조회 횟수가 약 12분의 1로 줄고, 500행 제한이 사라집니다. 운송 수단별 자료를 내는 보고국(독일 등 일부 국가)은 상단에 항공·해상·육상 선택이 나타납니다. 한국은 UN Comtrade에 운송 수단별 자료를 내지 않습니다.','The official API returns up to 12 periods and 100,000 rows per call, cutting calls about 12× and removing the 500-row limit. Reporters that publish transport-mode breakdowns (e.g. Germany) get an air/sea/land selector. Korea does not publish this breakdown to UN Comtrade.')],
+   [T('경쟁사 비교 (식약처 허가·DMF)','Competitors (MFDS permits, DMF)'),T('품목 점유율은 식약처 의약품 제품 허가정보 42,704건(2026-10-19 기준) 중 유효 허가 품목 수 기준이며 매출 점유율이 아닙니다. 성분은 제품명에 함께 적힌 한글 성분명으로 영문 성분과 짝을 지었습니다. 원료 조달 단가는 업체가 등록한 원료 제조국의 평균 수입 단가로 추정합니다. 원료 등록은 식약처 원료의약품 등록(DMF) 현황 9,184건(2026-10-19 기준)에서 성분별로 국내 업체·제조소·제조국을 집계합니다. HS 품목은 한글 성분명 키워드로 연결합니다. 등록은 취급 자격 기록이라 실제 구매량·가격은 알 수 없습니다. DATA_GO_KR_KEY를 넣으면 최신 자료를 실시간으로 조회합니다.','Counts Korean companies, sites and countries per ingredient from 9,184 MFDS DMF records (as of 2026-10-19). HS codes are linked by Korean ingredient keywords. A DMF registration shows eligibility to supply, not actual purchases. With DATA_GO_KR_KEY the latest data is fetched live.')],
+   [T('국가별 규제 (PIC/S·WHO)','Regulators (PIC/S, WHO)'),T('PIC/S 회원 당국 명단(2026-10-20 확인), WHO 공인 규제기관(WLA, 2025년 12월 목록), WHO 성숙도 3·4 국가(2026년 8월 목록)와 120여 개국 규제기관 공식 명칭을 씁니다. 이 표시들은 규제 체계를 가늠하는 참고 지표일 뿐, 실제 등록 요건은 국가·품목마다 다릅니다.','Uses the PIC/S member list (checked 2026-10-20), WHO-Listed Authorities (Dec 2025 list), WHO ML3/ML4 countries (Aug 2026 list) and official regulator names for 120+ countries. These are reference indicators; registration rules vary by country and product.')],
     [T('기간 선택','Periods'),T('UN Comtrade가 해당 보고국 자료를 실제로 공개한 최신 기간부터 거꾸로 N개 기간을 가져옵니다. 각국 보고 후 반영까지 수개월이 걸리므로, 최신 자료가 오래됐으면 화면에 안내합니다. 한국은 관세청 HSK 10단위 자료를 CSV로 올리면 더 최신·더 세분된 단가로 비교할 수 있습니다.','The latest N periods that UN Comtrade has actually published for the reporter are used. Publication lags by months, and the app tells you when the latest data is old. For Korea, uploading 10-digit HSK data from Korea Customs gives more recent and more specific prices.')],
-    [T('조건 환산 (인코텀즈 2020)','Term conversion (Incoterms 2020)'),T('모든 조건을 FOB(=FCA·FAS) 값으로 바꾼 뒤 통계 기준으로 다시 계산합니다. CFR·CPT = FOB + 운임(FOB 대비 % 또는 USD/kg). CIF·CIP = CFR ÷ (1 − 1.1 × 보험료율) — 계약금액의 110%를 부보하는 규칙입니다. EXW = FOB ÷ (1 + 수출지 비용%). DAP·DPU = CIF × (1 + 도착지 비용%). DDP = DAP + CIF × 관세율%(관세는 CIF 과세가격 기준), 부가세 제외.','Every term is converted via FOB (= FCA, FAS). CFR/CPT = FOB + freight (% of FOB or USD/kg). CIF/CIP = CFR ÷ (1 − 1.1 × premium rate), the 110% cover rule. EXW = FOB ÷ (1 + origin costs %). DAP/DPU = CIF × (1 + destination costs %). DDP = DAP + CIF × duty % (duty on the CIF customs value), excluding VAT.')],
+    [T('조건 환산 (인코텀즈 2020)','Term conversion (Incoterms 2020)'),T('모든 조건을 FOB(=FCA·FAS) 값으로 바꾼 뒤 통계 기준으로 다시 계산합니다. CFR·CPT = FOB + 운임(FOB 대비 % 또는 USD/kg). CIF·CIP = CFR ÷ (1 − 1.1 × 보험료율) — 계약금액의 110%를 부보하는 규칙입니다. EXW = FOB ÷ (1 + 수출지 비용%). DAP·DPU = CIF × (1 + 도착지 비용%). DDP = DAP + CIF × 관세율%(관세는 CIF 과세가격 기준), 부가세 제외. 미국·캐나다·호주 등은 FOB 기준으로 과세하고, 인코텀즈 DDP는 원칙적으로 수입 부가세까지 포함하니 견적의 부가세 포함 여부를 확인하세요.','Every term is converted via FOB (= FCA, FAS). CFR/CPT = FOB + freight (% of FOB or USD/kg). CIF/CIP = CFR ÷ (1 − 1.1 × premium rate), the 110% cover rule. EXW = FOB ÷ (1 + origin costs %). DAP/DPU = CIF × (1 + destination costs %). DDP = DAP + CIF × duty % (duty on the CIF customs value), excluding VAT. The US, Canada and Australia levy duty on FOB value, and Incoterms DDP normally includes import VAT, so check whether a quote includes it.')],
     [T('변동·집중도','Change & concentration'),T('최근 변동은 마지막 3개 기간과 그 앞 3개 기간을 같은 나라끼리 비교한 값입니다(두 기간 중 작은 물량으로 가중). 싼 나라·비싼 나라 비중이 바뀌어 생기는 평균 변화(구성 효과)는 따로 표시합니다. HHI는 점유율 제곱합 × 10,000이며 미국 법무부·FTC 2023년 기준을 따라 1,800 초과를 고집중으로 봅니다.','Change compares the last 3 periods with the 3 before, country by country (weighted by the smaller of the two volumes); mix effects are shown separately. HHI = Σ share² × 10,000; above 1,800 is highly concentrated (2023 US DOJ/FTC guidelines).')],
     [T('비교 신뢰도','Comparison reliability'),T('관측치 수(20개 미만 감점, 8개 미만 크게 감점), 가격 폭 P90/P10(3배·5배 초과), 4자리 이하 코드·"그 밖의" 소호, 30류 의약품의 kg 단가 한계와 이전가격, 주요 상대국 수(3곳 미만), 추정 중량 비중(20%·50% 초과)을 점수로 더해 높음·보통·낮음을 정합니다. 낮음이면 판정을 참고용으로 표시하고 메일에 구체적 %를 쓰지 않습니다.','Points for few observations (<20, <8), wide P90/P10 (>3×, >5×), codes under 6 digits or residual "other" subheadings, chapter 30 per-kg limits and transfer pricing, fewer than 3 main partners, and estimated weights (>20%, >50%) give High, Moderate or Low. Low marks the verdict as indicative and keeps exact percentages out of the email.')],
     [T('의약품 데이터 주의','Medicines: caveats'),T('원료의약품은 같은 6자리 코드에도 성분·등급(USP·EP·JP), 멸균 여부가 섞입니다. 완제의약품(3004)과 바이오의약품(3002)은 순중량에 바이알·블리스터 같은 내포장이 일부 포함되고 제품이 달라 kg 단가가 거칩니다. 의약품 수입에는 다국적사 본사-지사 간 이전가격이 많고, 일부 국가는 품목·상대국을 비공개 처리합니다. 2022년 HS 개정으로 3002 등 일부 코드가 바뀌었습니다.','APIs mix substances, grades (USP, EP, JP) and sterility under one 6-digit code. Net weight for 3004 and 3002 partly includes inner packaging, and products differ, so per-kg values are rough. Medicine imports include intra-company transfer prices, some reporters suppress codes or partners, and HS 2022 changed codes such as 3002.')]];
@@ -1860,12 +2209,13 @@ function readFile(file){
 }
 
 /* ================= events ================= */
-function pickProduct(code){S.hs=code;store.set('hs',code);S.pOpen=false;S.pq='';S.selCountry=null;S.trendSel=null;S.mapSel=null;S.cop.country='';S.cache={};
+function resetLists(){S.regMore=S.regPMore=S.trendAll=S.mapAll=false;S.regQ=''}
+function pickProduct(code){resetLists();S.hs=code;store.set('hs',code);S.pOpen=false;S.pq='';S.selCountry=null;S.trendSel=null;S.mapSel=null;S.cop.country='';S.cache={};
   if(S.src==='live'){render();loadLive()}else render()}
 function bind(){
   const app=$('#app');
   app.onclick=e=>{
-    const t=e.target.closest('button,[data-msel],tr[data-csel]');
+    const t=e.target.closest('button,[data-msel],tr[data-csel],tr[data-comp]');
     if(S.pOpen&&!e.target.closest('.psearch')){S.pOpen=false;S.pq='';render();if(!t)return}
     if(!t||t.disabled)return;const d=t.dataset;
     if('lang' in d){S.lang=S.lang==='ko'?'en':'ko';store.set('lang',S.lang);S.cache={};render();return}
@@ -1885,7 +2235,7 @@ function bind(){
     if(d.freq){S.freq=d.freq;S.n=d.freq==='A'?5:12;store.set('freq',S.freq);store.set('n',S.n);S.cache={};render();loadLive();return}
     if(d.measure){S.measure=d.measure;S.cache={};render();return}
     if('reload' in d){S.liveCache={};store.del('lc:'+liveKey());loadLive(true);return}
-    if(d.src){S.src=d.src;store.set('src',S.src);if(S.src==='live'&&S.hs.length>6){S.hs=S.hs.slice(0,6);store.set('hs',S.hs)}if(S.src!=='live'&&![6,12,24].includes(S.n)){S.n=12;S.freq='M'}S.cache={};S.selCountry=null;S.trendSel=null;S.mapSel=null;render();if(S.src==='live')loadLive();return}
+    if(d.src){resetLists();S.src=d.src;store.set('src',S.src);if(S.src==='live'&&S.hs.length>6){S.hs=S.hs.slice(0,6);store.set('hs',S.hs)}if(S.src!=='live'&&![6,12,24].includes(S.n)){S.n=12;S.freq='M'}S.cache={};S.selCountry=null;S.trendSel=null;S.mapSel=null;render();if(S.src==='live')loadLive();return}
     if(d.sort){S.sort={k:d.sort,d:S.sort.k===d.sort?-S.sort.d:(d.sort==='name'?1:-1)};render();return}
     if('cselClose' in d){S.selCountry=null;render();return}
     if(d.csel&&!e.target.closest('[data-cop]')){S.selCountry=S.selCountry===d.csel?null:d.csel;render();if(S.selCountry){const el=$('#ch-cdetail');el&&el.scrollIntoView({block:'nearest',behavior:'smooth'})}return}
@@ -1906,7 +2256,18 @@ function bind(){
     if('copyboth' in d){const a=$('#mail').value,b=$('#mail-local').value;const ta=$('#mail-local');copyText(a+'\n\n----------\n\n'+b,T('영문과 현지어를 함께 복사했습니다','Copied English and local'),ta);return}
     if('aiRevert' in d){if(S.aiOrig!=null){$('#mail').value=S.aiOrig;S.aiOrig=null;t.hidden=true;const st=$('#ai-status');if(st)st.textContent=T('원문으로 되돌렸습니다.','Reverted.')}return}
     if(d.copy){const el=$('#'+(d.copy==='hist'?'hist-csv':d.copy));copyText(el.value,T('복사했습니다','Copied'),el);return}
-    if(d.dl){const stamp=new Date().toISOString().slice(0,10);if(d.dl==='countries')saveFile(`pharmaprice_HS${S.hs}_${repInfo().a3}_${S.flow}_${stamp}.csv`,countriesCSV(ctx()));else if(d.dl==='hist')saveFile(`pharmaprice_history_${stamp}.csv`,histCSV());else saveFile(`pharmaprice_data_HS${S.hs}_${repInfo().a3}_${stamp}.csv`,datasetCSV());return}
+    if(d.dmfPick!=null){dmfPick(d.dmfPick);return}
+    if(d.dmfMore!=null){S.dmfMore=true;render();return}
+    if(d.regMore!=null){S.regMore=true;render();return}
+    if(d.rivTab){S.rivTab=d.rivTab;render();return}
+    if(d.comp!=null){S.compSel=S.compSel===d.comp?null:d.comp;render();return}
+    if(d.compMore!=null){S.compMore=true;render();return}
+    if(d.compClose!=null){S.compSel=null;render();return}
+    if(d.tall!=null){S.trendAll=d.tall==='1';render();return}
+    if(d.mall!=null){S.mapAll=d.mall==='1';render();return}
+    if(d.regPmore!=null){S.regPMore=true;render();return}
+    if(d.regF){S.regF=d.regF;S.regMore=false;render();return}
+    if(d.dl){const stamp=new Date().toISOString().slice(0,10);if(d.dl==='dmf'){saveFile(`pharmaprice_DMF_${String(S.dmfIng).replace(/[\\/:*?"<>|\s]+/g,'_')}_${stamp}.csv`,dmfCSV(S.dmfIng));return}if(d.dl==='countries')saveFile(`pharmaprice_HS${S.hs}_${repInfo().a3}_${S.flow}_${stamp}.csv`,countriesCSV(ctx()));else if(d.dl==='hist')saveFile(`pharmaprice_history_${stamp}.csv`,histCSV());else saveFile(`pharmaprice_data_HS${S.hs}_${repInfo().a3}_${stamp}.csv`,datasetCSV());return}
     if('save' in d){saveHist();return}
     if(d.hopen!=null){const r=S.hist[+d.hopen];if(r&&r.input){S.flow=r.buy?'M':'X';S.cop=Object.assign({},COP_DEF,r.input);store.set('cop',S.cop);S.view='copilot';if(r.hs)S.hs=r.hs;if(r.repCode)S.reporter=r.repCode;S.cache={};render();window.scrollTo(0,0);if(S.src==='live')loadLive()}return}
     if(d.hdel!=null){S.hist.splice(+d.hdel,1);store.set('hist',S.hist);render();toast(T('기록을 삭제했습니다','Deleted'));return}
@@ -1925,22 +2286,24 @@ function bind(){
     if('impCancel' in d){S.imp=null;render();return}
   };
   app.onkeydown=e=>{
-    const tr=e.target.closest('tr[data-csel]');if(tr&&e.target===tr&&(e.key==='Enter'||e.key===' ')){e.preventDefault();tr.click();return}
+    const tr=e.target.closest('tr[data-csel],tr[data-comp]');if(tr&&e.target===tr&&(e.key==='Enter'||e.key===' ')){e.preventDefault();tr.click();return}
     if(e.target.id==='p-q'){const res=S.pq.trim()?hsSearch(S.pq):$$('#p-list [data-pick]').map(b=>({code:b.dataset.pick}));
       if(e.key==='ArrowDown'){e.preventDefault();S.pAct=Math.min(res.length-1,S.pAct+1);render()}else if(e.key==='ArrowUp'){e.preventDefault();S.pAct=Math.max(0,S.pAct-1);render()}
       else if(e.key==='Enter'){e.preventDefault();if(res[S.pAct])pickProduct(res[S.pAct].code)}else if(e.key==='Escape'){S.pOpen=false;S.pq='';render()}}
   };
-  const pq=$('#p-q');if(pq)pq.oninput=()=>{S.pq=pq.value;S.pAct=0;render()};
+  const pq=$('#p-q');if(pq){const up=()=>{S.pq=pq.value;S.pAct=0;patchHTML(productPicker(),['#p-list'])};pq.oninput=e=>{if(!e.isComposing)up()};pq.addEventListener('compositionend',up)}
   $$('details.guide').forEach(g=>g.ontoggle=()=>{S.guides[g.dataset.guide]=g.open;store.set('guides',S.guides)});
   const hp=$('#hero-price');if(hp)hp.oninput=()=>{S.heroPrice=hp.value;$('#hero-res').innerHTML=heroResult()};
   const lf=$('#login-form');if(lf)lf.onsubmit=e=>{e.preventDefault();const nm=$('#lg-name').value.trim(),em=$('#lg-email').value.trim(),pw=$('#lg-pw').value,er=$('#lg-err');
     const msg=!em?T('이메일을 입력하세요','Enter your email'):!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)?T('이메일 형식을 확인하세요. 예: name@company.com','Check the email format, e.g. name@company.com'):pw.length<4?T('비밀번호는 4자 이상 입력하세요','Password must be 4+ characters'):'';
     $('#lg-email').classList.toggle('bad',!!msg&&!/4/.test(msg));$('#lg-pw').classList.toggle('bad',/4/.test(msg));
     if(msg){er.textContent=msg;er.hidden=false;return}S.user={name:nm||em.split('@')[0],email:em};store.set('user',S.user);go('app','dash');toast(T(`${S.user.name}님, 환영합니다`,`Welcome, ${S.user.name}`))};
-  const fr=$('#f-rep');if(fr)fr.onchange=()=>{S.reporter=+fr.value;store.set('reporter',S.reporter);S.cache={};S.selCountry=null;S.trendSel=null;S.mapSel=null;S.cop.country='';render();loadLive()};
+  const fr=$('#f-rep');if(fr)fr.onchange=()=>{resetLists();S.reporter=+fr.value;store.set('reporter',S.reporter);S.cache={};S.selCountry=null;S.trendSel=null;S.mapSel=null;S.cop.country='';render();loadLive()};
   const fn=$('#f-n');if(fn)fn.onchange=()=>{S.n=+fn.value;store.set('n',S.n);S.cache={};render();if(S.src==='live')loadLive()};
   const fm=$('#f-mot');if(fm)fm.onchange=()=>{S.mot=fm.value;S.cache={};render();loadLive()};
-  const cq=$('#c-q');if(cq)cq.oninput=()=>{S.q=cq.value;const pos=cq.selectionStart;render();const c2=$('#c-q');c2.focus();try{c2.setSelectionRange(pos,pos)}catch(e){}};
+  const cq=$('#c-q');if(cq){const up=()=>{S.q=cq.value;patchHTML(vCountries(),['#view .tbl-wrap'])};cq.oninput=e=>{if(!e.isComposing)up()};cq.addEventListener('compositionend',up)}
+  const dq=$('#dmf-q');if(dq){const up=()=>{S.dmfQ=dq.value;patchHTML(vRivals(),['#dmf-res'])};dq.oninput=e=>{if(!e.isComposing)up()};dq.addEventListener('compositionend',up)}
+  const rq=$('#reg-q');if(rq){const up=()=>{S.regQ=rq.value;S.regMore=false;patchHTML(vRegs(),['#reg-dir'])};rq.oninput=e=>{if(!e.isComposing)up()};rq.addEventListener('compositionend',up)}
   const ma=$('#t-ma');if(ma)ma.onchange=()=>{S.ma=ma.checked;render()};
   $$('[data-cop-in]').forEach(el=>{const h=()=>{const k=el.dataset.copIn,prev=S.cop[k];S.cop[k]=el.value;if(k==='qty')S.cop.qtyAuto=false;if(k==='fx'||k==='eur')S.cop.fxAuto=false;
       if((k==='cur'||k==='unit')&&n(S.cop.price,NaN)>0){const R=rates(S.cop);const o0=Object.assign({},S.cop,{[k]:prev});const usd=toUSDu(n(S.cop.price),o0,R),nv=fromUSDu(usd,S.cop,R);if(isFinite(nv)&&nv>0){S.cop.price=String(+nv.toFixed(curDec(S.cop.cur,S.cop.unit)));$('#cp-price').value=S.cop.price}}
